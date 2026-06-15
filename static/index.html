@@ -1,0 +1,2133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>试题批量生成工具</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .container { max-width: 1000px; margin: 0 auto; }
+    h1 { font-size: 24px; margin-bottom: 8px; color: #fff; }
+    .subtitle { color: #94a3b8; font-size: 14px; margin-bottom: 24px; }
+
+    .card {
+      background: rgba(30, 41, 59, 0.8);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 16px;
+    }
+    .card h2 { font-size: 16px; margin-bottom: 12px; color: #cbd5e1; }
+
+    label { display: block; font-size: 13px; color: #94a3b8; margin-bottom: 6px; }
+    input, textarea {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      background: rgba(15, 23, 42, 0.6);
+      color: #e2e8f0;
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input:focus, textarea:focus { border-color: #6366f1; }
+    textarea { resize: vertical; min-height: 80px; }
+
+    .btn {
+      display: inline-block;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-primary { background: #6366f1; color: #fff; }
+    .btn-primary:hover { background: #4f46e5; }
+    .btn-primary:disabled { background: #4b5563; cursor: not-allowed; }
+    .btn-success { background: #059669; color: #fff; }
+    .btn-success:hover { background: #047857; }
+    .btn-success:disabled { background: #4b5563; cursor: not-allowed; }
+    .btn-danger { background: #dc2626; color: #fff; }
+    .btn-danger:hover { background: #b91c1c; }
+
+    .status {
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-top: 12px;
+    }
+    .status-success { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); color: #86efac; }
+    .status-error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; }
+    .status-info { background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.3); color: #a5b4fc; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin-top: 12px;
+    }
+    th, td {
+      padding: 8px 10px;
+      border: 1px solid rgba(255,255,255,0.06);
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: rgba(99,102,241,0.1); color: #a5b4fc; font-weight: 500; }
+    td { color: #cbd5e1; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+
+    .tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .tag-pending { background: rgba(148,163,184,0.2); color: #94a3b8; }
+    .tag-success { background: rgba(34,197,94,0.2); color: #86efac; }
+    .tag-error { background: rgba(239,68,68,0.2); color: #fca5a5; }
+    .tag-info { background: rgba(99,102,241,0.2); color: #a5b4fc; }
+    .tag-skip { background: rgba(245,158,11,0.2); color: #fbbf24; }
+
+    .file-input-wrapper {
+      position: relative;
+      display: inline-block;
+    }
+    .file-input-wrapper input[type="file"] {
+      position: absolute; left: 0; top: 0;
+      width: 100%; height: 100%;
+      opacity: 0; cursor: pointer;
+    }
+
+    .format-hint {
+      background: rgba(99,102,241,0.05);
+      border: 1px solid rgba(99,102,241,0.2);
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 12px;
+      color: #a5b4fc;
+      margin-bottom: 16px;
+    }
+    .format-hint code {
+      background: rgba(99,102,241,0.15);
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+
+    .hidden { display: none !important; }
+    .mt-12 { margin-top: 12px; }
+    .mt-16 { margin-top: 16px; }
+    .mb-12 { margin-bottom: 12px; }
+
+    /* 全局设置分组 */
+    .settings-group {
+      margin-top: 14px;
+      padding: 14px;
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.015);
+    }
+    .settings-group-label {
+      font-size: 12px;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 10px;
+    }
+    .settings-row {
+      display: grid;
+      gap: 10px;
+      margin-top: 8px;
+    }
+    .settings-row.cols-2 { grid-template-columns: 1fr 1fr; }
+    .settings-row.cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+    .settings-row label {
+      font-size: 12px;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+    .settings-row small { color: #475569; font-size: 11px; }
+    .settings-row select,
+    .settings-row input {
+      width: 100%;
+      padding: 7px 9px;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 6px;
+      background: rgba(15,23,42,0.5);
+      color: #e2e8f0;
+      font-size: 13px;
+      outline: none;
+    }
+    .settings-row select:focus,
+    .settings-row input:focus { border-color: #6366f1; }
+    .settings-group textarea {
+      width: 100%;
+      padding: 7px 9px;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 6px;
+      background: rgba(15,23,42,0.5);
+      color: #e2e8f0;
+      font-size: 13px;
+      outline: none;
+      resize: vertical;
+      min-height: 34px;
+    }
+    .settings-group textarea:focus { border-color: #6366f1; }
+
+    .priority-hint {
+      font-size: 12px;
+      color: #a5b4fc;
+      background: rgba(99,102,241,0.08);
+      border: 1px solid rgba(99,102,241,0.15);
+      border-radius: 8px;
+      padding: 8px 12px;
+      margin: 8px 0 14px;
+    }
+
+    .fb-sub-group { margin-bottom: 8px; }
+    .fb-sub-label {
+      font-size: 13px;
+      color: #cbd5e1;
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
+    .fb-divider {
+      border-top: 1px solid rgba(255,255,255,0.05);
+      margin: 10px 0;
+    }
+
+    .settings-hint {
+      font-size: 12px;
+      color: #64748b;
+      line-height: 1.6;
+      margin: 0;
+    }
+    .settings-hint b { color: #94a3b8; }
+
+    /* 勾选框 */
+    .q-select, #select-all-checkbox {
+      width: 16px; height: 16px;
+      accent-color: #6366f1;
+      cursor: pointer;
+    }
+
+    .progress-bar-container {
+      background: rgba(99,102,241,0.15);
+      border-radius: 8px;
+      overflow: hidden;
+      height: 28px;
+      position: relative;
+      margin-top: 12px;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #6366f1, #8b5cf6);
+      transition: width 0.3s ease;
+      border-radius: 8px;
+    }
+    .progress-bar-text {
+      position: absolute;
+      top: 5px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 12px;
+      color: #e2e8f0;
+      font-weight: 500;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+    }
+
+    /* 多文件标签页 */
+    .tabs-bar {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .tab-btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 8px 8px 0 0;
+      background: transparent;
+      color: #94a3b8;
+      font-size: 13px;
+      cursor: pointer;
+      position: relative;
+      white-space: nowrap;
+      max-width: 200px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tab-btn:hover { color: #e2e8f0; background: rgba(255,255,255,0.03); }
+    .tab-btn.active {
+      color: #a5b4fc;
+      background: rgba(99,102,241,0.1);
+    }
+    .tab-btn.active::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 8px; right: 8px;
+      height: 2px;
+      background: #6366f1;
+      border-radius: 1px;
+    }
+    .tab-badge {
+      display: inline-block;
+      margin-left: 6px;
+      padding: 1px 6px;
+      border-radius: 10px;
+      font-size: 11px;
+      background: rgba(99,102,241,0.2);
+      color: #a5b4fc;
+    }
+    .tab-btn.active .tab-badge {
+      background: rgba(99,102,241,0.4);
+      color: #c7d2fe;
+    }
+
+    .row-input {
+      width: 130px;
+      padding: 4px 6px;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 4px;
+      background: rgba(15, 23, 42, 0.6);
+      color: #e2e8f0;
+      font-size: 11px;
+      outline: none;
+    }
+    .row-input:focus { border-color: #6366f1; }
+
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.7);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1000;
+    }
+    .modal-box {
+      background: #1e293b; border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px; padding: 24px;
+      max-width: 520px; width: 90%; max-height: 80vh; overflow-y: auto;
+    }
+    .modal-box h3 { font-size: 16px; margin-bottom: 16px; color: #fff; }
+    .modal-box label { font-size: 12px; color: #94a3b8; margin-bottom: 4px; }
+    .modal-box .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .modal-box .btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+
+    /* 预览弹窗 */
+    .preview-modal-box {
+      background: #1e293b; border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 16px; padding: 24px;
+      max-width: 1100px; width: 94%; max-height: 92vh; overflow-y: auto;
+      display: flex; flex-direction: column; align-items: center;
+    }
+    .preview-modal-box h3 { font-size: 16px; margin-bottom: 16px; color: #fff; width: 100%; display: flex; justify-content: space-between; align-items: center; }
+    .preview-canvas-wrapper {
+      background: #ece6da;
+      border-radius: 12px;
+      padding: 12px;
+      display: flex; justify-content: center; align-items: center;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    }
+    .preview-canvas {
+      width: 960px; height: 667px;
+      background: #fffaf7;
+      border: none;
+      border-radius: 4px;
+      position: relative;
+      overflow: hidden;
+    }
+    .preview-editor-topbar {
+      position: absolute;
+      left: 0; right: 0; top: 0; height: 48px;
+      background: #f1f5f9;
+      color: #f00;
+      font-size: 18px;
+      line-height: 48px;
+      padding-left: 26px;
+      z-index: 4;
+    }
+    .preview-editor-button {
+      position: absolute;
+      right: 8px; top: 6px;
+      width: 80px; height: 40px;
+      background: #1890ff;
+      color: #fff;
+      font-size: 17px;
+      line-height: 40px;
+      text-align: center;
+      border-radius: 2px;
+      z-index: 5;
+    }
+    .preview-question-type-bar {
+      position: absolute;
+      left: 0; right: 0; top: 48px; height: 94px;
+      background: #f1f5f9;
+      z-index: 1;
+    }
+    .preview-editor-footer {
+      position: absolute;
+      left: 0; right: 0; bottom: 0; height: 106px;
+      background: #eef2f6;
+      z-index: 1;
+    }
+    .preview-content-boundary {
+      position: absolute;
+      border: 1.5px dashed #9bd66f;
+      box-sizing: border-box;
+      pointer-events: none;
+      z-index: 2;
+    }
+    .preview-placeholder {
+      position: absolute;
+      left: 16px; right: 16px; bottom: 12px;
+      text-align: center;
+      color: rgba(93,64,55,0.45);
+      font-size: 12px;
+      pointer-events: none;
+    }
+    .preview-canvas-title {
+      position: absolute;
+      top: 68px;
+      left: 182px;
+      width: 970px;
+      transform: none;
+      font-size: 22px;
+      color: #8b8b93;
+      letter-spacing: 0;
+      text-align: left;
+      font-weight: 600;
+      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+      z-index: 6;
+    }
+    .preview-canvas-text {
+      position: absolute;
+      color: #8d6e63;
+      font-weight: 600;
+      line-height: 1.18;
+      text-align: center;
+      white-space: normal;
+      word-break: break-all;
+      overflow-wrap: anywhere;
+      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+      box-sizing: border-box;
+      z-index: 4;
+    }
+    .preview-option {
+      position: absolute;
+      background: #fff;
+      border: 1.5px solid #e0d0c0;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      z-index: 4;
+    }
+    .preview-option-content {
+      font-size: 18px;
+      color: #5d4037;
+      font-weight: 600;
+      text-align: center;
+      padding: 4px 8px;
+      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+      white-space: normal;
+      word-break: break-all;
+      line-height: 1.15;
+      max-width: 3.2em;
+    }
+    .preview-option-correct {
+      position: absolute;
+      bottom: 3px;
+      right: 3px;
+      width: 10px;
+      height: 10px;
+      background: #ef4444;
+      border-radius: 50%;
+      border: 1.5px solid #fff;
+      box-shadow: 0 0 3px rgba(239,68,68,0.4);
+    }
+    .preview-close-btn {
+      background: rgba(255,255,255,0.1);
+      border: none;
+      color: #94a3b8;
+      font-size: 20px;
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .preview-close-btn:hover { background: rgba(255,255,255,0.2); color: #fff; }
+    @media (max-width: 750px) {
+      .preview-canvas { transform: scale(0.65); transform-origin: center; }
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.95); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>试题批量生成工具</h1>
+    <p class="subtitle">从 Excel 表格批量导入选择题</p>
+
+    <!-- Step 1: Cookie 验证 -->
+    <div class="card" id="auth-card">
+      <h2>🔐 Cookie 验证</h2>
+      <label>粘贴莫顿 Cookie（需包含 tokenCrm）</label>
+      <textarea id="cookie-input" placeholder="tokenCrm=...; userIdCrm=..."></textarea>
+      <div class="mt-12">
+        <button class="btn btn-primary" onclick="validateCookie()">验证</button>
+      </div>
+      <div id="auth-status" class="hidden"></div>
+    </div>
+
+    <!-- Step 2: 上传 Excel -->
+    <div class="card" id="upload-card">
+      <h2>📄 导入 Excel</h2>
+      <div class="format-hint">
+        表头格式：<code>题干</code> | <code>文本</code> | <code>选项A</code> | <code>选项B</code> | <code>选项C</code> | <code>选项D</code> | <code>选项E</code> | <code>选项F</code> | <code>选项G</code> | <code>选项H</code> | <code>答案</code> | <code>名称</code> | <code>学科</code> | <code>分辨率</code> | <code>年级</code> | <code>阶段</code> | <code>难度</code> | <code>知识点</code> | <code>题目图片</code> | <code>画布背景</code> | <code>答错反馈</code> | <code>答对反馈</code> | <code>答错图片</code> | <code>答对图片</code> | <code>答错音频</code> | <code>答对音频</code> | <code>最少错次</code> | <code>最多错次</code> | <code>条件反馈文本</code> | <code>条件图片URL</code> | <code>条件音频URL</code><br>
+        学科填：数学/英语/新数学/思维盒子。年级填：幼儿-小班~高三。阶段填：招生课/春/暑/秋/寒/专题课。难度：1~5。知识点分号分隔。反馈相关列移至末尾；条件反馈最少/最多错次填数字。
+      </div>
+      <div class="file-input-wrapper">
+        <button class="btn btn-primary">选择 Excel 文件（可多选）</button>
+        <input type="file" id="file-input" accept=".xlsx,.xls" multiple onchange="handleFileUpload(event)">
+      </div>
+      <div id="upload-status" class="hidden"></div>
+      <div class="priority-hint">
+        📋 <b>优先级</b>：Excel 列数据优先 → 留空时才使用下方全局默认值
+      </div>
+
+      <label>题目名称（统一）</label>
+      <input id="default-name-input" placeholder="如：数学选择题 #1（留空则使用 Excel 第8列名称）">
+
+      <!-- 基础属性：学科/难度/年级/阶段 — 4列并排 -->
+      <div class="settings-group">
+        <div class="settings-group-label">📂 基础属性 <small>(无 Excel 列时作为默认值)</small></div>
+        <div class="settings-row cols-4">
+          <div><label>学科</label><select id="default-subject-select" class="form-select"><option value="0">-- 加载中... --</option></select></div>
+          <div><label>难度</label><select id="default-difficulty-select" class="form-select"><option value="0">-- 加载中... --</option></select></div>
+          <div><label>年级</label><select id="default-grade-select" class="form-select"><option value="0">-- 加载中... --</option></select></div>
+          <div><label>阶段</label><select id="default-stage-select" class="form-select"><option value="0">-- 加载中... --</option></select></div>
+        </div>
+      </div>
+
+      <!-- 画布资源：题目图片 + 画布背景 -->
+      <div class="settings-group">
+        <div class="settings-group-label">🎨 画布资源 <small>(无 Excel 列时作为默认值)</small></div>
+        <div class="settings-row cols-2">
+          <div><label>题目图片URL <small>(分号分隔)</small></label><input id="default-images-input" placeholder="//cdn.xxx.com/img1.png; //cdn.xxx.com/img2.png"></div>
+          <div><label>画布背景URL</label><input id="default-bg-input" placeholder="//cdn.xxx.com/bg.png"></div>
+        </div>
+      </div>
+
+      <!-- 通用反馈 -->
+      <div class="settings-group">
+        <div class="settings-group-label">💬 通用反馈 <small>(无 Excel 列时作为默认值)</small></div>
+        <div class="fb-sub-group">
+          <div class="fb-sub-label">❌ 答错</div>
+          <textarea id="wrong-feedback-input" placeholder="如：再仔细想想哦，注意看选项中的关键信息..." rows="1"></textarea>
+          <div class="settings-row cols-2">
+            <div><label>图片URL</label><input id="wrong-img-input" placeholder="//cdn.xxx.com/wrong.png"></div>
+            <div><label>音频URL</label><input id="wrong-audio-input" placeholder="//cdn.xxx.com/sound.mp3"></div>
+          </div>
+        </div>
+        <div class="fb-divider"></div>
+        <div class="fb-sub-group">
+          <div class="fb-sub-label">✅ 答对</div>
+          <textarea id="correct-feedback-input" placeholder="如：真棒！你答对了。" rows="1"></textarea>
+          <div class="settings-row cols-2">
+            <div><label>图片URL</label><input id="correct-img-input" placeholder="//cdn.xxx.com/right.png"></div>
+            <div><label>音频URL</label><input id="correct-audio-input" placeholder="//cdn.xxx.com/cheer.mp3"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 条件反馈 -->
+      <div class="settings-group">
+        <div class="settings-group-label">🎯 条件反馈 <small>(无 Excel 列时作为默认值)</small></div>
+        <p class="settings-hint">触发条件：按错误次数范围匹配。仅在逐题「编辑反馈」中未设置时生效。</p>
+        <div class="settings-row cols-2">
+          <div><label>最少错次</label><input id="default-cond-min" type="number" min="0" max="999" value="0" style="width:100%"></div>
+          <div><label>最多错次</label><input id="default-cond-max" type="number" min="0" max="999" value="0" style="width:100%"></div>
+        </div>
+        <div style="margin-top:8px"><label>反馈文本</label><textarea id="default-cond-text" placeholder="根据错误次数给出针对性提醒..." rows="1"></textarea></div>
+        <div class="settings-row cols-2" style="margin-top:8px">
+          <div><label>图片URL</label><input id="default-cond-img" placeholder="//cdn.xxx.com/hint.png"></div>
+          <div><label>音频URL</label><input id="default-cond-audio" placeholder="//cdn.xxx.com/remind.mp3"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 3: 预览和生成 -->
+    <div class="card hidden" id="preview-card">
+      <h2>📋 预览</h2>
+      <div id="tabs-bar" class="tabs-bar"></div>
+      <div id="preview-info" class="mb-12"></div>
+      <div style="overflow-x: auto;">
+        <table id="preview-table">
+          <thead>
+            <tr>
+              <th style="width:32px;text-align:center"><input type="checkbox" id="select-all-checkbox" onclick="toggleSelectAll()" title="全选/取消"></th>
+              <th>#</th><th>题干</th><th>名称</th><th>选项</th><th>答案</th><th>学科</th><th>年级</th><th>阶段</th><th>难度</th><th>图片</th><th>背景</th><th>反馈状态</th><th>生成结果</th><th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="preview-tbody"></tbody>
+        </table>
+      </div>
+      <div class="mt-16">
+        <button class="btn btn-success" id="generate-btn" onclick="batchGenerate()">
+          批量生成
+        </button>
+        <button class="btn btn-success" id="generate-all-btn" onclick="batchGenerateAll()" style="margin-left:12px;background:#4f46e5;">
+          全部生成
+        </button>
+        <button class="btn" id="clear-one-btn" onclick="clearCurrent()"
+                style="margin-left:12px;background:#f59e0b;color:#fff;">
+          清空当前
+        </button>
+        <button class="btn btn-danger" id="clear-all-btn" onclick="clearAll()" style="margin-left:12px">
+          清空全部
+        </button>
+      </div>
+      <div id="generate-status" class="hidden mt-12"></div>
+      <div id="progress-container" class="hidden">
+        <div class="progress-bar-container">
+          <div id="progress-bar" class="progress-bar-fill" style="width:0%"></div>
+          <span id="progress-text" class="progress-bar-text">0%</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 反馈编辑弹窗 -->
+  <div class="modal-overlay hidden" id="fb-modal" onclick="if(event.target===this)closeFbModal()">
+    <div class="modal-box" onclick="event.stopPropagation()">
+      <h3 id="fb-modal-title">✏️ 编辑第 1 题反馈</h3>
+
+      <div style="border-bottom:1px solid rgba(255,255,255,0.1);margin-bottom:12px">
+        <p style="font-size:13px;color:#a5b4fc;margin-bottom:8px">通用反馈</p>
+      </div>
+
+      <label>答错反馈文本</label>
+      <textarea id="fb-wrong-text" rows="2" placeholder="别灰心，再想想！"></textarea>
+      <div class="grid mt-12">
+        <div><label>答错图片URL</label><input id="fb-wrong-img" placeholder="//cdn.xxx.com/wrong.png"></div>
+        <div><label>答对图片URL</label><input id="fb-right-img" placeholder="//cdn.xxx.com/right.png"></div>
+        <div><label>答错音频URL</label><input id="fb-wrong-audio" placeholder="//cdn.xxx.com/sound.mp3"></div>
+        <div><label>答对音频URL</label><input id="fb-right-audio" placeholder="//cdn.xxx.com/cheer.mp3"></div>
+      </div>
+      <label class="mt-12">答对反馈文本</label>
+      <textarea id="fb-right-text" rows="2" placeholder="太棒了，答对了！"></textarea>
+
+      <div style="border-bottom:1px solid rgba(255,255,255,0.1);margin:16px 0 12px">
+        <p style="font-size:13px;color:#f59e0b;margin-bottom:8px">⚠ 条件反馈（基于错误次数）</p>
+      </div>
+
+      <div id="cond-fb-container"></div>
+
+      <button class="btn" style="width:100%;background:rgba(245,158,11,0.2);color:#f59e0b;border:1px dashed rgba(245,158,11,0.3);text-align:center"
+              onclick="addCondFeedback()">+ 添加条件反馈</button>
+
+      <div class="btn-row">
+        <button class="btn" style="background:#4b5563;color:#fff" onclick="closeFbModal()">取消</button>
+        <button class="btn btn-primary" onclick="saveFbModal()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 预览弹窗 -->
+  <div class="modal-overlay hidden" id="preview-modal" onclick="if(event.target===this)closePreviewModal()">
+    <div class="preview-modal-box" onclick="event.stopPropagation()">
+      <h3>
+        <span id="preview-modal-title">题目预览</span>
+        <button class="preview-close-btn" onclick="closePreviewModal()">&times;</button>
+      </h3>
+      <div class="preview-canvas-wrapper">
+        <div class="preview-canvas" id="preview-canvas"></div>
+      </div>
+      <div style="margin-top:12px;font-size:12px;color:#94a3b8;text-align:center">
+        <span id="preview-resolution">1334 × 750</span> &nbsp;|&nbsp;
+        <span id="preview-info-text">创建前预览基于后端最终 questionData 本地渲染，不会在莫顿系统创建题目。生成后可点击「📸 真实预览」核对莫顿实际效果。</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 真实截图预览弹窗 -->
+  <div class="modal-overlay hidden" id="real-preview-modal" onclick="if(event.target===this)closeRealPreview()">
+    <div class="preview-modal-box" onclick="event.stopPropagation()" style="max-width:800px">
+      <h3>
+        <span id="real-preview-title">📸 真实预览</span>
+        <button class="preview-close-btn" onclick="closeRealPreview()">&times;</button>
+      </h3>
+      <div id="real-preview-loading" style="text-align:center;padding:60px 0">
+        <div style="font-size:36px;animation:pulse 1.5s infinite">📸</div>
+        <p style="color:#94a3b8;margin-top:12px">正在打开莫顿页面截图，首次约需 5~10 秒...</p>
+      </div>
+      <div id="real-preview-content" class="hidden" style="text-align:center">
+        <img id="real-preview-img" style="max-width:100%;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.15)" />
+      </div>
+      <div id="real-preview-error" class="hidden" style="text-align:center;padding:40px 0">
+        <div style="font-size:48px">😞</div>
+        <p id="real-preview-error-msg" style="color:#fca5a5;margin-top:12px">截图失败</p>
+        <p style="color:#64748b;font-size:12px;margin-top:4px">可能是登录状态过期或莫顿页面加载异常</p>
+      </div>
+      <div style="margin-top:12px;font-size:12px;color:#94a3b8;text-align:center">
+        由 Playwright 自动截图 — 100% 还原莫顿实际效果
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 全局状态
+    let authToken = '';
+    let authCookie = '';
+    // fileGroups 结构：
+    // {
+    //   filename: 'xxx.xlsx',
+    //   questions: [...],
+    //   results: { 0: {success, questionId, error}, ... },  // 每题生成结果
+    //   summary: { successCount, failCount, done },         // 批量生成摘要
+    //   progress: { percent, text }                          // 进度条状态
+    // }
+    let fileGroups = [];
+    let activeFileIndex = -1;
+
+    // helper: 获取当前激活文件的问题
+    function getCurrentQuestions() {
+      if (activeFileIndex < 0 || activeFileIndex >= fileGroups.length) return [];
+      return fileGroups[activeFileIndex].questions;
+    }
+
+    // ========== 勾选功能 ==========
+    function toggleSelectAll() {
+      const checked = document.getElementById('select-all-checkbox').checked;
+      const questions = getCurrentQuestions();
+      for (let i = 0; i < questions.length; i++) {
+        questions[i]._checked = checked;
+      }
+      renderPreview(); // 重新渲染以刷新状态
+    }
+
+    function onRowCheck() {
+      const questions = getCurrentQuestions();
+      const checkboxes = document.querySelectorAll('.q-select');
+      for (const cb of checkboxes) {
+        const idx = parseInt(cb.dataset.index);
+        if (idx >= 0 && idx < questions.length) {
+          questions[idx]._checked = cb.checked;
+        }
+      }
+      // 更新全选框状态
+      const allCb = document.getElementById('select-all-checkbox');
+      if (allCb) {
+        const allChecked = checkboxes.length > 0 && Array.from(checkboxes).every(c => c.checked);
+        const noneChecked = Array.from(checkboxes).every(c => !c.checked);
+        allCb.checked = allChecked;
+        allCb.indeterminate = !allChecked && !noneChecked;
+      }
+    }
+
+    function getSelectedQuestions() {
+      return getCurrentQuestions().filter(q => q._checked !== false);
+    }
+
+    // helper: 设置当前激活文件的问题
+    function setCurrentQuestions(questions) {
+      if (activeFileIndex < 0 || activeFileIndex >= fileGroups.length) return;
+      fileGroups[activeFileIndex].questions = questions;
+    }
+
+    // 动态映射表（从后端 /api/metadata/mappings 加载）
+    let SUBJECT_NAMES = {};  // {id: name}  如 {4: '数学'}
+    let GRADE_NAMES = {};    // {id: name}  如 {'9': '幼儿-小班'}
+    let STAGE_NAMES = {};    // {id: name}  如 {'2': '春'}
+    let DIFFICULTY_NAMES = {}; // {id: name} 如 {'1': '简单'}
+
+    // ========== 页面加载时获取映射表 ==========
+    async function loadMappings() {
+      try {
+        const resp = await fetch('/api/metadata/mappings');
+        const data = await resp.json();
+        if (data.success) {
+          // subjects: {"数学": 4, ...} → {4: "数学", ...}
+          SUBJECT_NAMES = Object.fromEntries(
+            Object.entries(data.subjects).map(([k, v]) => [v, k])
+          );
+          // grades: {"幼儿-小班": 9, ...} → {"9": "幼儿-小班", ...}
+          GRADE_NAMES = Object.fromEntries(
+            Object.entries(data.grades).map(([k, v]) => [String(v), k])
+          );
+          // stages: {"春": 2, ...} → {"2": "春", ...}
+          STAGE_NAMES = Object.fromEntries(
+            Object.entries(data.stages).map(([k, v]) => [String(v), k])
+          );
+          // difficulties: {"简单": 1, ...} → {"1": "简单", ...}（去重：同值只保留第一个）
+          DIFFICULTY_NAMES = {};
+          const seen = new Set();
+          for (const [k, v] of Object.entries(data.difficulties)) {
+            if (!seen.has(v)) {
+              DIFFICULTY_NAMES[String(v)] = k;
+              seen.add(v);
+            }
+          }
+          // 动态填充下拉框
+          populateSelects(data);
+        }
+      } catch (e) {
+        console.error('加载映射表失败:', e);
+      }
+    }
+
+    function populateSelects(data) {
+      // 学科下拉框
+      const subjectSelect = document.getElementById('default-subject-select');
+      if (subjectSelect) {
+        subjectSelect.innerHTML = '<option value="0">-- 以 Excel 为准 --</option>';
+        Object.entries(data.subjects)
+          .sort((a, b) => a[1] - b[1])
+          .forEach(([name, id]) => {
+            subjectSelect.innerHTML += `<option value="${id}">${name}</option>`;
+          });
+      }
+      // 年级下拉框
+      const gradeSelect = document.getElementById('default-grade-select');
+      if (gradeSelect) {
+        gradeSelect.innerHTML = '<option value="0">-- 以 Excel 为准 --</option>';
+        Object.entries(data.grades)
+          .sort((a, b) => a[1] - b[1])
+          .forEach(([name, id]) => {
+            gradeSelect.innerHTML += `<option value="${id}">${name}</option>`;
+          });
+      }
+      // 阶段下拉框
+      const stageSelect = document.getElementById('default-stage-select');
+      if (stageSelect) {
+        stageSelect.innerHTML = '<option value="0">-- 以 Excel 为准 --</option>';
+        Object.entries(data.stages)
+          .sort((a, b) => a[1] - b[1])
+          .forEach(([name, id]) => {
+            stageSelect.innerHTML += `<option value="${id}">${name}</option>`;
+          });
+      }
+      // 难度下拉框
+      const diffSelect = document.getElementById('default-difficulty-select');
+      if (diffSelect) {
+        diffSelect.innerHTML = '<option value="0">-- 以 Excel 为准 --</option>';
+        const seen = new Set();
+        Object.entries(data.difficulties)
+          .sort((a, b) => a[1] - b[1])
+          .forEach(([name, id]) => {
+            if (!seen.has(id)) {
+              diffSelect.innerHTML += `<option value="${id}">${id} - ${name}</option>`;
+              seen.add(id);
+            }
+          });
+      }
+    }
+
+    // 页面加载时立即获取
+    loadMappings();
+
+    // ========== Cookie 验证 ==========
+    async function validateCookie() {
+      const cookie = document.getElementById('cookie-input').value.trim();
+      if (!cookie) {
+        showStatus('auth-status', 'error', '请输入 Cookie');
+        return;
+      }
+
+      try {
+        const resp = await fetch('/api/auth/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cookie }),
+        });
+        const data = await resp.json();
+
+        if (data.success) {
+          authToken = data.token;
+          authCookie = cookie;
+
+          // 过期状态检测
+          if (data.isExpired) {
+            showStatus('auth-status', 'error', '❌ Token 已过期，请重新登录莫顿系统获取新 Cookie');
+            authToken = '';
+            authCookie = '';
+            return;
+          }
+
+          let msg = `✅ 验证成功 (operatorId: ${data.operatorId || '未知'})`;
+
+          if (data.willExpireSoon) {
+            const mins = data.remainingSeconds ? Math.ceil(data.remainingSeconds / 60) : '?';
+            msg += ` ⚠️ Token 将在 ${mins} 分钟后过期`;
+            showStatus('auth-status', 'info', msg);
+          } else if (data.remainingSeconds !== null && data.remainingSeconds !== undefined) {
+            const mins = Math.floor(data.remainingSeconds / 60);
+            const hours = Math.floor(mins / 60);
+            if (hours > 0) {
+              msg += ` · 有效期剩余 ${hours}小时${mins % 60}分钟`;
+            } else {
+              msg += ` · 有效期剩余 ${mins}分钟`;
+            }
+            showStatus('auth-status', 'success', msg);
+          } else {
+            showStatus('auth-status', 'success', msg);
+          }
+
+          // 启动定时检测
+          startTokenMonitor();
+        } else {
+          showStatus('auth-status', 'error', `❌ ${data.error}`);
+        }
+      } catch (e) {
+        showStatus('auth-status', 'error', `❌ 请求失败: ${e.message}`);
+      }
+    }
+
+    // ========== Token 过期定时检测 ==========
+    let tokenMonitorTimer = null;
+    function startTokenMonitor() {
+      if (tokenMonitorTimer) clearInterval(tokenMonitorTimer);
+      // 每5分钟检测一次
+      tokenMonitorTimer = setInterval(async () => {
+        if (!authCookie) return;
+        try {
+          const resp = await fetch('/api/auth/validate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cookie: authCookie }),
+          });
+          const data = await resp.json();
+          if (!data.success || data.isExpired) {
+            showStatus('auth-status', 'error', '❌ Token 已过期！请重新粘贴 Cookie');
+            authToken = '';
+            authCookie = '';
+            clearInterval(tokenMonitorTimer);
+          } else if (data.willExpireSoon) {
+            const mins = data.remainingSeconds ? Math.ceil(data.remainingSeconds / 60) : '?';
+            showStatus('auth-status', 'info', `⚠️ Token 即将过期（剩余 ${mins} 分钟），建议刷新`);
+          }
+        } catch (e) {
+          // 静默忽略网络错误
+        }
+      }, 5 * 60 * 1000);
+    }
+
+    // ========== 文件上传 ==========
+    async function handleFileUpload(event) {
+      const files = Array.from(event.target.files);
+      if (files.length === 0) return;
+
+      showStatus('upload-status', 'info', `正在解析 ${files.length} 个文件...`);
+
+      let totalParsed = 0;
+      const newGroups = [];
+
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+          const resp = await fetch('/api/question/parse-excel', {
+            method: 'POST',
+            body: formData,
+          });
+          const data = await resp.json();
+
+          if (!resp.ok) {
+            const msg = data.detail || data.message || JSON.stringify(data);
+            showStatus('upload-status', 'error', `❌ ${file.name}: 服务器错误 (${resp.status}): ${msg}`);
+            continue;
+          }
+
+          if (data.success) {
+            // 初始化勾选状态为已选
+            for (const q of data.questions) { q._checked = true; }
+            newGroups.push({
+              filename: file.name,
+              questions: data.questions,
+              results: {},
+              summary: null,
+              progress: null,
+            });
+            totalParsed += data.total;
+          } else {
+            showStatus('upload-status', 'error', `❌ ${file.name}: ${data.error || '未知错误'}`);
+          }
+        } catch (e) {
+          showStatus('upload-status', 'error', `❌ ${file.name}: ${e.message}`);
+        }
+      }
+
+      if (newGroups.length > 0) {
+        // 合并到现有数据（去重：同名文件替换）
+        for (const ng of newGroups) {
+          const existIdx = fileGroups.findIndex(g => g.filename === ng.filename);
+          if (existIdx >= 0) {
+            fileGroups[existIdx] = ng;
+          } else {
+            fileGroups.push(ng);
+          }
+        }
+        activeFileIndex = fileGroups.length - newGroups.length; // 默认显示第一个新文件
+        if (activeFileIndex < 0) activeFileIndex = 0;
+        showStatus('upload-status', 'success', `✅ 已解析 ${totalParsed} 道题（${newGroups.length} 个文件）`);
+        renderTabs();
+        renderPreview();
+      }
+
+      // 重置 input 以便再次选择同一文件
+      event.target.value = '';
+    }
+
+    // ========== 标签页渲染 ==========
+    function renderTabs() {
+      const tabsBar = document.getElementById('tabs-bar');
+      if (fileGroups.length === 0) {
+        tabsBar.innerHTML = '';
+        return;
+      }
+
+      tabsBar.innerHTML = fileGroups.map((g, i) => {
+        const active = i === activeFileIndex ? ' active' : '';
+        return `<button class="tab-btn${active}" onclick="switchTab(${i})">
+          ${escapeHtml(g.filename)}<span class="tab-badge">${g.questions.length}题</span>
+        </button>`;
+      }).join('');
+    }
+
+    function switchTab(index) {
+      activeFileIndex = index;
+      renderTabs();
+      renderPreview();
+      restoreFileState();
+    }
+
+    // 恢复当前文件的生成状态和进度条
+    function restoreFileState() {
+      const group = fileGroups[activeFileIndex];
+      if (!group) return;
+
+      const progressContainer = document.getElementById('progress-container');
+      const progressBar = document.getElementById('progress-bar');
+      const progressText = document.getElementById('progress-text');
+      const genStatus = document.getElementById('generate-status');
+
+      // 恢复进度条
+      if (group.progress) {
+        progressContainer.classList.remove('hidden');
+        progressBar.style.width = group.progress.percent + '%';
+        progressText.textContent = group.progress.text;
+      } else {
+        progressContainer.classList.add('hidden');
+        progressBar.style.width = '0%';
+        progressText.textContent = '0%';
+      }
+
+      // 恢复生成状态摘要
+      if (group.summary && group.summary.done) {
+        const type = group.summary.failCount > 0 ? 'error' : 'success';
+        const msg = group.summary.failCount > 0
+          ? `⚠️ 完成！成功 ${group.summary.successCount}，失败 ${group.summary.failCount}`
+          : `✅ 完成！成功 ${group.summary.successCount}，失败 ${group.summary.failCount}`;
+        showStatus('generate-status', type, msg);
+      } else if (group.progress && !group.summary) {
+        showStatus('generate-status', 'info', '正在批量生成...');
+      } else {
+        genStatus.classList.add('hidden');
+      }
+    }
+
+    // ========== 预览渲染 ==========
+    function renderPreview() {
+      const questions = getCurrentQuestions();
+      const card = document.getElementById('preview-card');
+      const tbody = document.getElementById('preview-tbody');
+      const info = document.getElementById('preview-info');
+
+      card.classList.remove('hidden');
+      const group = fileGroups[activeFileIndex];
+      const fileName = group ? group.filename : '';
+      const results = group ? group.results : {};
+      const summary = group ? group.summary : null;
+
+      // 如果有生成摘要，显示在 info 中
+      let summaryHtml = '';
+      if (summary && summary.done) {
+        const color = summary.failCount > 0 ? '#fca5a5' : '#86efac';
+        summaryHtml = ` &nbsp;|&nbsp; <span style="color:${color}">${summary.failCount > 0 ? '⚠️' : '✅'} 成功 ${summary.successCount}，失败 ${summary.failCount}</span>`;
+      }
+
+      const selectedCount = questions.filter(q => q._checked !== false).length;
+      info.innerHTML = `<span style="color:#94a3b8">${escapeHtml(fileName)}</span> &nbsp;共 <b>${questions.length}</b> 道题 &nbsp;|&nbsp; <span style="color:#86efac">已选 <b>${selectedCount}</b></span> &nbsp;|&nbsp; <span style="color:#86efac">✨ 智能布局</span> &nbsp;|&nbsp; <span style="color:#a5b4fc">点击「编辑反馈」配置通用反馈+条件反馈</span>${summaryHtml}`;
+
+      tbody.innerHTML = questions.map((q, i) => {
+        const optStr = q.options.map(o => `${o.label}. ${o.content}`).join(' ');
+        const hasText = q.wrongFeedback || q.correctFeedback;
+        const hasImg = q.wrongFeedbackImg || q.correctFeedbackImg;
+        const hasAudio = q.wrongFeedbackAudio || q.correctFeedbackAudio;
+        const hasCond = q.conditionFeedbacks && q.conditionFeedbacks.length > 0;
+        let fbStatus = '<span style="color:#64748b">未配置</span>';
+        let parts = [];
+        if (hasText) parts.push('文本');
+        if (hasImg) parts.push('图片');
+        if (hasAudio) parts.push('音频');
+        if (hasCond) parts.push('条件');
+        if (parts.length > 0) fbStatus = `<span style="color:#86efac">${parts.join('+')}</span>`;
+
+        // 生成结果列
+        const r = results[i];
+        let genResult = '<span style="color:#64748b">—</span>';
+        if (r) {
+          if (r.success) {
+            genResult = `<span style="color:#86efac">✅ #${r.questionId}</span>`;
+          } else {
+            genResult = `<span style="color:#fca5a5" title="${escapeHtml(r.error || '')}">❌ ${(r.error || '失败').slice(0, 12)}</span>`;
+          }
+        }
+
+        // 预览按钮：生成前使用不落库本地高保真预览，生成后使用莫顿正式题截图
+        const hasResult = r && r.success;
+        const previewLabel = hasResult ? '📸预览' : '👁预览';
+        const previewColor = hasResult ? '#0ea5e9' : '#22c55e';
+        const previewAction = hasResult ? `openRealPreview(${i})` : `openPreviewModal(${i})`;
+        const previewBtn = `<button class="btn" style="padding:4px 10px;font-size:12px;background:${previewColor};color:#fff;border:none;border-radius:4px;cursor:pointer;margin-right:4px"
+               onclick="${previewAction}">${previewLabel}</button>`;
+
+        return `<tr id="row-${i}">
+          <td style="text-align:center"><input type="checkbox" class="q-select" data-index="${i}" ${q._checked !== false ? 'checked' : ''} onchange="onRowCheck()"></td>
+          <td>${i+1}</td>
+          <td>${escapeHtml(q.stem).slice(0, 40)}</td>
+          <td style="color:#f59e0b">${escapeHtml(q.name || '(待生成)')}</td>
+          <td style="font-size:11px">${escapeHtml(optStr).slice(0, 60)}</td>
+          <td>${q.answer}</td>
+          <td style="font-size:11px">${SUBJECT_NAMES[q.subjectId] || (q.subjectId ? q.subjectId : '未设置')}</td>
+          <td style="font-size:11px">${GRADE_NAMES[String(q.grade)] || (q.grade ? q.grade : '未设置')}</td>
+          <td style="font-size:11px">${STAGE_NAMES[String(q.stage)] || (q.stage ? q.stage : '未设置')}</td>
+          <td style="font-size:11px">${q.difficulty || '未设置'}</td>
+          <td style="font-size:11px">${(q.questionImages && q.questionImages.length) ? `<span style="color:#f59e0b" title="${escapeHtml(q.questionImages.map(img => img.url).join('\n'))}">📷 ${q.questionImages.length}张</span>` : '<span style="color:#475569">—</span>'}</td>
+          <td style="font-size:11px">${q.backgroundUrl ? `<span style="color:#22c55e" title="${escapeHtml(q.backgroundUrl)}">🖼 已设置</span>` : '<span style="color:#475569">—</span>'}</td>
+          <td>${fbStatus}</td>
+          <td>${genResult}</td>
+          <td style="white-space:nowrap">
+            ${previewBtn}
+            <button class="btn" style="padding:4px 10px;font-size:12px;background:#6366f1;color:#fff;border:none;border-radius:4px;cursor:pointer"
+                 onclick="openFbModal(${i})">编辑反馈</button>
+          </td>
+        </tr>`;
+      }).join('');
+
+      // 同步全选框状态
+      const selectAllCb = document.getElementById('select-all-checkbox');
+      if (selectAllCb) {
+        const checkboxes = tbody.querySelectorAll('.q-select');
+        if (checkboxes.length === 0) {
+          selectAllCb.checked = false;
+          selectAllCb.indeterminate = false;
+        } else {
+          const allChecked = Array.from(checkboxes).every(c => c.checked);
+          const noneChecked = Array.from(checkboxes).every(c => !c.checked);
+          selectAllCb.checked = allChecked;
+          selectAllCb.indeterminate = !allChecked && !noneChecked;
+        }
+      }
+    }
+
+    // ========== 反馈弹窗 ==========
+    let editingIndex = -1;
+    function openFbModal(i) {
+      editingIndex = i;
+      const q = getCurrentQuestions()[i];
+      document.getElementById('fb-modal-title').textContent = `✏️ 编辑第 ${i+1} 题反馈 — ${q.stem.slice(0,15)}`;
+      document.getElementById('fb-wrong-text').value = q.wrongFeedback || '';
+      document.getElementById('fb-right-text').value = q.correctFeedback || '';
+      document.getElementById('fb-wrong-img').value = q.wrongFeedbackImg || '';
+      document.getElementById('fb-right-img').value = q.correctFeedbackImg || '';
+      document.getElementById('fb-wrong-audio').value = q.wrongFeedbackAudio || '';
+      document.getElementById('fb-right-audio').value = q.correctFeedbackAudio || '';
+      renderCondFeedbacks(q.conditionFeedbacks || []);
+      document.getElementById('fb-modal').classList.remove('hidden');
+    }
+    function closeFbModal() {
+      document.getElementById('fb-modal').classList.add('hidden');
+    }
+    function saveFbModal() {
+      if (editingIndex < 0) return;
+      const q = getCurrentQuestions()[editingIndex];
+      q.wrongFeedback = document.getElementById('fb-wrong-text').value.trim();
+      q.correctFeedback = document.getElementById('fb-right-text').value.trim();
+      q.wrongFeedbackImg = document.getElementById('fb-wrong-img').value.trim();
+      q.correctFeedbackImg = document.getElementById('fb-right-img').value.trim();
+      q.wrongFeedbackAudio = document.getElementById('fb-wrong-audio').value.trim();
+      q.correctFeedbackAudio = document.getElementById('fb-right-audio').value.trim();
+      q.conditionFeedbacks = collectCondFeedbacks();
+      closeFbModal();
+      renderPreview();
+    }
+
+    // 条件反馈
+    function addCondFeedback(min, max, content, img, audio) {
+      const container = document.getElementById('cond-fb-container');
+      const uid = Date.now();
+      const div = document.createElement('div');
+      div.className = 'cond-fb-item';
+      div.style.cssText = 'background:rgba(245,158,11,0.05);border-radius:8px;padding:10px;margin-bottom:8px;position:relative';
+      div.id = 'cond-' + uid;
+      div.innerHTML = `
+        <button onclick="document.getElementById('cond-${uid}').remove()" style="position:absolute;top:4px;right:8px;background:none;border:none;color:#ef4444;cursor:pointer;font-size:16px">×</button>
+        <div class="grid">
+          <div><label>错误次数区间</label>
+              <div style="display:flex;align-items:center;gap:6px">
+                <input value="${min||0}" placeholder="最小" style="flex:1" class="cond-min">
+                <span style="color:#94a3b8">~</span>
+                <input value="${max||0}" placeholder="最大" style="flex:1" class="cond-max">
+              </div>
+          </div>
+          <div><label>反馈内容</label><input value="${escapeHtml(content||'')}" placeholder="触达后显示的文字" class="cond-content"></div>
+          <div><label>图片URL</label><input value="${escapeHtml(img||'')}" placeholder="(可选)" class="cond-img"></div>
+          <div><label>音频URL</label><input value="${escapeHtml(audio||'')}" placeholder="(可选)" class="cond-audio"></div>
+        </div>`;
+      container.appendChild(div);
+    }
+    function renderCondFeedbacks(list) {
+      document.getElementById('cond-fb-container').innerHTML = '';
+      if (list && list.length) {
+        list.forEach(cf => addCondFeedback(cf.minWrong, cf.maxWrong, cf.content, cf.imageUrl, cf.audioUrl));
+      }
+    }
+    function collectCondFeedbacks() {
+      const items = document.querySelectorAll('.cond-fb-item');
+      const list = [];
+      items.forEach(el => {
+        const min = parseInt(el.querySelector('.cond-min').value) || 0;
+        const max = parseInt(el.querySelector('.cond-max').value) || 0;
+        const content = el.querySelector('.cond-content').value.trim();
+        const imageUrl = el.querySelector('.cond-img').value.trim();
+        const audioUrl = el.querySelector('.cond-audio').value.trim();
+        list.push({ minWrong: min, maxWrong: max, content, imageUrl, audioUrl });
+      });
+      return list;
+    }
+
+    // ========== 批量生成（SSE 流式） ==========
+    async function batchGenerate() {
+      if (!authToken || !authCookie) {
+        showStatus('generate-status', 'error', '请先验证 Cookie');
+        return;
+      }
+      const questions = getSelectedQuestions();
+      if (questions.length === 0) {
+        showStatus('generate-status', 'error', '没有选中的题目，请勾选题目后再生成');
+        return;
+      }
+
+      // 批量生成前检测 Token 有效性
+      try {
+        const checkResp = await fetch('/api/auth/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cookie: authCookie }),
+        });
+        const checkData = await checkResp.json();
+        if (!checkData.success || checkData.isExpired) {
+          showStatus('generate-status', 'error', '❌ Token 已过期，请重新粘贴 Cookie');
+          authToken = '';
+          authCookie = '';
+          showStatus('auth-status', 'error', '❌ Token 已过期！请重新粘贴 Cookie');
+          return;
+        }
+        if (checkData.willExpireSoon) {
+          const mins = checkData.remainingSeconds ? Math.ceil(checkData.remainingSeconds / 60) : '?';
+          if (!confirm(`Token 将在 ${mins} 分钟后过期，可能生成到一半失效。建议重新获取 Cookie。\n\n继续生成吗？`)) {
+            return;
+          }
+        }
+      } catch (e) {
+        // 检测失败不阻止生成
+      }
+
+      const btn = document.getElementById('generate-btn');
+      btn.disabled = true;
+      btn.textContent = '生成中...';
+
+      // 显示进度条
+      const progressContainer = document.getElementById('progress-container');
+      const progressBar = document.getElementById('progress-bar');
+      const progressText = document.getElementById('progress-text');
+      progressContainer.classList.remove('hidden');
+      progressBar.style.width = '0%';
+      progressText.textContent = '0%';
+      showStatus('generate-status', 'info', '正在批量生成...');
+
+      try {
+        const defaults = getGenerationDefaults();
+
+        const resp = await fetch('/api/question/batch-create-stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            questions: questions,
+            cookie: authCookie,
+            token: authToken,
+            ...defaults,
+          }),
+        });
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        // 获取当前文件组引用，用于保存结果
+        const currentGroup = fileGroups[activeFileIndex];
+        currentGroup.results = {};
+        currentGroup.summary = null;
+        currentGroup.progress = { percent: 0, text: '0%' };
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop(); // 保留未完成的行
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const data = JSON.parse(line.slice(6));
+
+            if (data.done) {
+              // 全部完成
+              currentGroup.summary = {
+                done: true,
+                successCount: data.successCount,
+                failCount: data.failCount,
+              };
+              currentGroup.progress = { percent: 100, text: '100%' };
+
+              if (data.fatalError) {
+                showStatus('generate-status', 'error', `❌ 生成中断: ${data.fatalError}`);
+              } else {
+                const type = data.failCount > 0 ? 'error' : 'success';
+                const icon = data.failCount > 0 ? '⚠️' : '✅';
+                showStatus('generate-status', type,
+                  `${icon} 完成！成功 ${data.successCount}，失败 ${data.failCount}`);
+              }
+              progressBar.style.width = '100%';
+              progressText.textContent = '✅ 完成';
+              currentGroup.progress = { percent: 100, text: '✅ 完成' };            } else {
+              // 单题进度更新
+              const percent = data.percent || 0;
+              progressBar.style.width = percent + '%';
+              progressText.textContent = `${data.progress} (${percent}%)`;
+              currentGroup.progress = { percent, text: `${data.progress} (${percent}%)` };
+
+              // 保存结果到当前文件
+              currentGroup.results[data.index] = {
+                success: data.success,
+                questionId: data.questionId,
+                error: data.error,
+              };
+
+              // 更新表格行状态：生成成功后立即把操作列切换为真实预览
+              const row = document.getElementById(`row-${data.index}`);
+              if (row) {
+                const genCell = row.children[13]; // 生成结果列
+                const actionCell = row.children[14]; // 操作列
+                if (data.success) {
+                  genCell.innerHTML = `<span style="color:#86efac">✅ #${data.questionId}</span>`;
+                  if (actionCell) {
+                    actionCell.innerHTML = `
+                      <button class="btn" style="padding:4px 10px;font-size:12px;background:#0ea5e9;color:#fff;border:none;border-radius:4px;cursor:pointer;margin-right:4px"
+                           onclick="openRealPreview(${data.index})">📸 真实预览</button>
+                      <button class="btn" style="padding:4px 10px;font-size:12px;background:#6366f1;color:#fff;border:none;border-radius:4px;cursor:pointer"
+                           onclick="openFbModal(${data.index})">编辑反馈</button>`;
+                  }
+                } else {
+                  genCell.innerHTML = `<span style="color:#fca5a5" title="${escapeHtml(data.error || '')}">❌ ${(data.error || '失败').slice(0, 12)}</span>`;
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        showStatus('generate-status', 'error', `❌ 请求失败: ${e.message}`);
+        // 保存错误状态到当前文件
+        const curGroup = fileGroups[activeFileIndex];
+        if (curGroup) {
+          curGroup.summary = { done: true, successCount: 0, failCount: curGroup.questions.length };
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '批量生成';
+      }
+    }
+
+    // ========== 批量生成全部文件 ==========
+    async function batchGenerateAll() {
+      if (!authToken || !authCookie) {
+        showStatus('generate-status', 'error', '请先验证 Cookie');
+        return;
+      }
+      if (fileGroups.length === 0) {
+        showStatus('generate-status', 'error', '没有可生成的题目');
+        return;
+      }
+
+      const allBtn = document.getElementById('generate-all-btn');
+      allBtn.disabled = true;
+      allBtn.textContent = '全部生成中...';
+
+      try {
+        for (let i = 0; i < fileGroups.length; i++) {
+          activeFileIndex = i;
+          renderTabs();
+          // 全部生成时先全选当前文件所有题目
+          const qs = fileGroups[i].questions;
+          for (const q of qs) { q._checked = true; }
+          renderPreview();
+          restoreFileState();
+          await batchGenerate();
+        }
+      } finally {
+        allBtn.disabled = false;
+        allBtn.textContent = '全部生成';
+      }
+    }
+
+    // ========== 清空 ==========
+    function clearCurrent() {
+      if (fileGroups.length === 0) return;
+      fileGroups.splice(activeFileIndex, 1);
+      if (fileGroups.length === 0) {
+        activeFileIndex = -1;
+        document.getElementById('preview-card').classList.add('hidden');
+        document.getElementById('tabs-bar').innerHTML = '';
+        document.getElementById('preview-tbody').innerHTML = '';
+        document.getElementById('preview-info').innerHTML = '';
+        document.getElementById('generate-status').classList.add('hidden');
+        document.getElementById('progress-container').classList.add('hidden');
+        document.getElementById('progress-bar').style.width = '0%';
+        document.getElementById('progress-text').textContent = '0%';
+      } else {
+        // 切换到前一个标签，如果删除的是最后一个则切到最后一个
+        if (activeFileIndex >= fileGroups.length) {
+          activeFileIndex = fileGroups.length - 1;
+        }
+        renderTabs();
+        renderPreview();
+        restoreFileState();
+      }
+    }
+
+    function clearAll() {
+      fileGroups = [];
+      activeFileIndex = -1;
+      // 隐藏预览卡片
+      document.getElementById('preview-card').classList.add('hidden');
+      // 隐藏进度条
+      document.getElementById('progress-container').classList.add('hidden');
+      document.getElementById('progress-bar').style.width = '0%';
+      document.getElementById('progress-text').textContent = '0%';
+      // 隐藏状态提示
+      document.getElementById('generate-status').classList.add('hidden');
+      document.getElementById('upload-status').classList.add('hidden');
+      // 清空文件选择框
+      document.getElementById('file-input').value = '';
+      // 清空标签栏
+      document.getElementById('tabs-bar').innerHTML = '';
+      document.getElementById('preview-tbody').innerHTML = '';
+      document.getElementById('preview-info').innerHTML = '';
+    }
+
+    // ========== 工具函数 ==========
+    function showStatus(elementId, type, message) {
+      const el = document.getElementById(elementId);
+      el.className = `status status-${type}`;
+      el.textContent = message;
+      el.classList.remove('hidden');
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    // ========== 预览：布局计算（复刻后端 _calculate_smart_layout）==========
+    const PREVIEW_SCALE = 0.5;
+    const PREVIEW_FONT_SIZE = 32;
+    const PREVIEW_RGB = '#9f765b';
+
+    // ══════════════════════════════════════════════
+    //  智能画布布局引擎 — 4 阶段核心逻辑 (前端版)
+    // ══════════════════════════════════════════════
+
+    const _CW_CN = 0.85, _CW_EN = 0.55, _CW_PUNCT = 0.40, _LH_RATIO = 1.35;
+
+    function _charWidth(ch, fontSize) {
+      // 精确测量单个字符宽度（CJK 字体环境）
+      // ASCII 窄字符，其余一律按中文宽度 — ∠△∥＝ 等数学符号不会漏算
+      const code = ch.charCodeAt(0);
+      if (code < 0x80) {
+        if (',.!?;:()[]{}'.includes(ch)) return fontSize * _CW_PUNCT;
+        return fontSize * _CW_EN;
+      }
+      if ((code >= 0x3000 && code <= 0x303F) || (code >= 0xFF01 && code <= 0xFF5E) ||
+          code === 0x2026 || code === 0x2018 || code === 0x2019 || code === 0x201C || code === 0x201D ||
+          code === 0x00B7) return fontSize * _CW_PUNCT;
+      return fontSize * _CW_CN;  // 默认：中文、日韩、数学符号、几何符号等
+    }
+
+    function _wrapTextToLines(text, fontSize, maxWidth) {
+      if (!text) return [];
+      const breakChars = new Set('，。！？；：、 ');
+      const allLines = [];
+      for (const para of String(text).split('\n')) {
+        if (!para) { allLines.push(''); continue; }
+        let cur = '', curW = 0;
+        const chars = [...para];
+        for (let idx = 0; idx < chars.length; idx++) {
+          const ch = chars[idx];
+          const cw = _charWidth(ch, fontSize);
+          if (curW + cw > maxWidth && cur) {
+            // 智能断行：向前找最近标点
+            let bestBreak = cur.length;
+            const lookback = Math.min(10, cur.length);
+            for (let j = cur.length - 1; j >= cur.length - lookback && j >= 0; j--) {
+              if (breakChars.has(cur[j])) { bestBreak = j + 1; break; }
+            }
+            if (bestBreak < cur.length) {
+              const carry = cur.slice(bestBreak);
+              allLines.push(cur.slice(0, bestBreak));
+              cur = carry;
+            } else {
+              allLines.push(cur);
+              cur = '';
+            }
+            curW = [...cur].reduce((s, c) => s + _charWidth(c, fontSize), 0);
+            // 行首不能是中文标点
+            if (cur && cur[0]) {
+              const fc = cur.charCodeAt(0);
+              if ((fc >= 0x3000 && fc <= 0x303F) || (fc >= 0xFF00 && fc <= 0xFFEF)) {
+                if (allLines.length) allLines[allLines.length - 1] += cur[0];
+                cur = cur.slice(1);
+                curW = [...cur].reduce((s, c) => s + _charWidth(c, fontSize), 0);
+              }
+            }
+          }
+          cur += ch; curW += cw;
+        }
+        if (cur) allLines.push(cur);
+      }
+      return allLines;
+    }
+
+    function _measureParagraph(text, fontSize, maxWidth) {
+      const lines = _wrapTextToLines(text, fontSize, maxWidth);
+      let maxLw = 0;
+      for (const l of lines) {
+        let lw = 0;
+        for (const c of l) lw += _charWidth(c, fontSize);
+        maxLw = Math.max(maxLw, lw);
+      }
+      return { lines, lineCount: lines.length, maxLineWidth: Math.round(maxLw), totalHeight: Math.round(lines.length * fontSize * _LH_RATIO) };
+    }
+
+    function calculateSmartLayout(optionsCount, contextsCount, contextTexts, questionImages, backgroundUrl) {
+      const CL = 182, CR = 1152, CT = 130, CB = 580;
+      const CW = CR - CL, CH = CB - CT, CCX = (CL + CR) / 2;
+      const PAD_TOP = 20, PAD_BOTTOM = 20, MIN_GAP = 20;
+
+      // ── 阶段 1: MEASURE ──
+      let totalChars = 0;
+      if (contextTexts) totalChars = contextTexts.reduce((s, t) => s + (t ? String(t).length : 0), 0);
+      let FONT_SIZE = totalChars <= 15 ? 50 : totalChars <= 40 ? 45 : 40;
+
+      const textParagraphs = [];
+      if (contextTexts && contextsCount > 0) {
+        for (const t of contextTexts) textParagraphs.push(_measureParagraph(t, FONT_SIZE, CW));
+      }
+
+      const images = [];
+      if (questionImages && questionImages.length) {
+        const imgMaxW = Math.floor(CW * 0.45), imgMaxH = Math.floor(CH * 0.35);
+        for (const img of questionImages) {
+          const iw = img.width || 200, ih = img.height || 200;
+          const scale = Math.min(imgMaxW / iw, imgMaxH / ih, 1);
+          images.push({ url: img.url || '', width: Math.round(iw * scale), height: Math.round(ih * scale) });
+        }
+      }
+
+      // ── 阶段 2: PARTITION ──
+      let textTotalH = 0, textMaxW = 0;
+      for (const m of textParagraphs) { textTotalH += m.totalHeight; textMaxW = Math.max(textMaxW, m.maxLineWidth); }
+      if (textParagraphs.length > 1) textTotalH += (textParagraphs.length - 1) * 16;
+
+      let imgTotalH = 0, imgTotalW = 0;
+      if (images.length) {
+        imgTotalW = images.reduce((s, i) => s + i.width, 0) + (images.length - 1) * MIN_GAP;
+        imgTotalH = Math.max(...images.map(i => i.height));
+      }
+
+      const hasImages = images.length > 0;
+      let layoutMode = 'TEXT_ONLY', textZoneW = CW;
+
+      if (hasImages) {
+        const textMinW = textMaxW > 0 ? Math.min(textMaxW, CW * 0.35) : 0;
+        const canInline = (imgTotalW + textMinW + MIN_GAP * 2) <= CW;
+        if (canInline && images.length === 1) {
+          layoutMode = 'TEXT_LEFT_IMAGE_RIGHT';
+          textZoneW = CW - images[0].width - MIN_GAP * 2;
+          // re-measure with narrower width
+          while (textParagraphs.length > 0) textParagraphs.pop();
+          for (const t of (contextTexts || [])) textParagraphs.push(_measureParagraph(t, FONT_SIZE, textZoneW));
+          textTotalH = textParagraphs.reduce((s, m) => s + m.totalHeight, 0);
+          if (textParagraphs.length > 1) textTotalH += (textParagraphs.length - 1) * 16;
+          textMaxW = Math.max(...textParagraphs.map(m => m.maxLineWidth), 0);
+        } else {
+          layoutMode = 'IMAGE_TOP_TEXT_BELOW';
+        }
+      }
+
+      const upperContentH = (hasImages ? imgTotalH + MIN_GAP : 0) + (textParagraphs.length ? textTotalH : 0);
+      const optionAvailableH = CH - PAD_TOP - upperContentH - MIN_GAP - PAD_BOTTOM;
+      const OPTION_H = Math.max(100, Math.min(160, optionAvailableH));
+
+      // ── 阶段 3: PLACE ──
+      const imagePositions = [];
+      if (hasImages) {
+        if (layoutMode === 'TEXT_LEFT_IMAGE_RIGHT') {
+          // 图片放右侧，顶部对齐
+          imagePositions.push({ x: CR - MIN_GAP - images[0].width, y: CT + PAD_TOP, width: images[0].width, height: images[0].height, url: images[0].url });
+        } else {
+          let cx = CCX - imgTotalW / 2;
+          for (const im of images) {
+            imagePositions.push({ x: Math.round(cx), y: CT + PAD_TOP, width: im.width, height: im.height, url: im.url });
+            cx += im.width + MIN_GAP;
+          }
+        }
+      }
+
+      const textPositions = [];
+      if (contextTexts && contextsCount > 0) {
+        let currentY;
+        if (layoutMode === 'TEXT_LEFT_IMAGE_RIGHT') {
+          currentY = CT + PAD_TOP;
+        } else if (layoutMode === 'IMAGE_TOP_TEXT_BELOW') {
+          currentY = CT + PAD_TOP + imgTotalH + MIN_GAP;
+        } else {
+          currentY = CT + PAD_TOP;
+        }
+        const zoneX = CL + MIN_GAP;  // 统一加边距，x=202
+        const zoneW = layoutMode === 'TEXT_LEFT_IMAGE_RIGHT' ? CW - images[0].width - MIN_GAP * 2 : CW - MIN_GAP * 2;
+        for (const m of textParagraphs) {
+          const rowW = m.maxLineWidth;
+          const tx = rowW <= zoneW ? zoneX + (zoneW - rowW) / 2 : zoneX;
+          const tw = rowW <= zoneW ? rowW : zoneW;
+          textPositions.push({ x: Math.round(tx), y: Math.round(currentY), width: Math.round(tw), align: 'center' });
+          currentY += m.totalHeight + 16;
+        }
+      }
+
+      // ── 选项 ──
+      let optW, gap;
+      if (optionsCount === 2) { optW = 220; gap = Math.max(180, Math.floor((CW - 2 * 220) / 2)); }
+      else if (optionsCount === 3) { optW = 210; gap = Math.max(80, Math.floor((CW - 3 * 210) / 3)); }
+      else if (optionsCount === 4) { optW = 190; gap = 50; }
+      else { optW = 160; gap = 40; }
+
+      const totalOptW = optionsCount * optW + (optionsCount - 1) * gap;
+      if (totalOptW > CW) {
+        const scale = CW / totalOptW;
+        optW = Math.max(140, Math.floor(optW * scale));
+        gap = Math.max(30, Math.floor(gap * scale));
+      }
+
+      const optY = CB - PAD_BOTTOM - OPTION_H;
+      const optStartX = CL + (CW - (optionsCount * optW + (optionsCount - 1) * gap)) / 2;
+      const optionPositions = [];
+      for (let i = 0; i < optionsCount; i++) {
+        optionPositions.push({ x: Math.round(optStartX + i * (optW + gap)), y: Math.round(optY), width: Math.round(optW), height: Math.round(OPTION_H) });
+      }
+
+      // ── 阶段 4: ADJUST ──
+      for (const tp of textPositions) {
+        if (tp.x < CL) tp.x = CL + 10;
+        if (tp.x + tp.width > CR) tp.width = CR - tp.x - 10;
+      }
+      for (const op of optionPositions) {
+        op.x = Math.max(CL + 5, Math.min(op.x, CR - op.width - 5));
+      }
+
+      return { optionPositions, textPositions, imagePositions, backgroundUrl: backgroundUrl || '', font_size: FONT_SIZE, layoutMode };
+    }
+
+    // ========== 预览弹窗 ==========
+    async function fetchPreviewQuestionData(q) {
+      const resp = await fetch('/api/question/preview-payload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          question: q,
+          ...getGenerationDefaults(),
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data.success) {
+        throw new Error(data.error || `预览数据构建失败 (HTTP ${resp.status})`);
+      }
+      return data.questionData;
+    }
+
+    function estimateMortonTextWidth(text, fontSize) {
+      const s = String(text || '');
+      if (!s) return 0;
+      return Math.max(...s.split('\n').map(line => {
+        let cn = 0;
+        for (const ch of line) {
+          if (ch >= '一' && ch <= '鿿') cn += 1;
+        }
+        const other = line.length - cn;
+        return cn * fontSize * 0.85 + other * fontSize * 0.55;
+      }));
+    }
+
+    function normalizeAssetUrl(url) {
+      if (!url) return '';
+      const s = String(url).trim();
+      if (s.startsWith('//')) return window.location.protocol + s;
+      return s;
+    }
+
+    function renderFeedbackPreviewBadge(canvas, questionData) {
+      const feedbacks = [];
+      const wrong = questionData.wrongQuestionFeedback;
+      const right = questionData.rightQuestionFeedback;
+      const cond = questionData.questionFeedbacks || [];
+      if (wrong) feedbacks.push(`答错反馈${wrong.webUrl ? '+图' : ''}${wrong.webAudioUrl ? '+音频' : ''}`);
+      if (right) feedbacks.push(`答对反馈${right.webUrl ? '+图' : ''}${right.webAudioUrl ? '+音频' : ''}`);
+      if (cond.length) feedbacks.push(`${cond.length} 条条件反馈`);
+      if (!feedbacks.length) return;
+
+      const badge = document.createElement('div');
+      badge.style.cssText = 'position:absolute;left:10px;bottom:10px;max-width:420px;background:rgba(255,255,255,0.78);border:1px solid rgba(159,118,91,0.25);border-radius:8px;padding:4px 8px;font-size:11px;color:#8d6e63;z-index:20;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+      badge.textContent = '反馈：' + feedbacks.join(' / ');
+      canvas.appendChild(badge);
+    }
+
+    function renderQuestionDataPreview(questionData) {
+      const canvas = document.getElementById('preview-canvas');
+      canvas.innerHTML = '';
+
+      const width = questionData.autoWidth || 1334;
+      const height = questionData.autoHeight || 750;
+      // 只模拟莫顿“中间编辑画布”截图比例：约 1158×804。
+      // 后端 questionData 仍使用 1334×750 业务坐标；绿色内容框业务坐标为 182,130,970,450。
+      // 莫顿编辑画布中对应绿色框约为 28,160,1102,408，因此用这个框做仿射映射。
+      const editor = { width: 1158, height: 804 };
+      const displayW = 960;
+      const displayH = Math.round(displayW * editor.height / editor.width);
+      const scale = displayW / editor.width;
+      const sourceBox = { x: 182, y: 130, width: 970, height: 450 };
+      const editorBox = { x: 28, y: 160, width: 1102, height: 408 };
+      const boxScaleX = editorBox.width / sourceBox.width;
+      const boxScaleY = editorBox.height / sourceBox.height;
+      const mapXRaw = (x) => editorBox.x + (x - sourceBox.x) * boxScaleX;
+      const mapYRaw = (y) => editorBox.y + (y - sourceBox.y) * boxScaleY;
+      const mapX = (x) => mapXRaw(x) * scale;
+      const mapY = (y) => mapYRaw(y) * scale;
+      canvas.style.width = displayW + 'px';
+      canvas.style.height = displayH + 'px';
+      canvas.style.background = '#fffaf7';
+      canvas.style.backgroundSize = 'cover';
+      canvas.style.backgroundPosition = 'center';
+
+      const bgUrl = normalizeAssetUrl(questionData.webBgmUrl || questionData.webUrl || questionData.backgroundUrl || questionData.bgUrl || '');
+      if (bgUrl) canvas.style.backgroundImage = `url("${bgUrl}")`;
+      else canvas.style.backgroundImage = 'none';
+
+      const topbar = document.createElement('div');
+      topbar.className = 'preview-editor-topbar';
+      topbar.textContent = `当前是预览状态，不可编辑${questionData.name ? ' ｜ 名称：' + questionData.name : ''}`;
+      topbar.style.height = (48 * scale) + 'px';
+      topbar.style.lineHeight = (48 * scale) + 'px';
+      topbar.style.fontSize = (18 * scale) + 'px';
+      topbar.style.paddingLeft = (26 * scale) + 'px';
+      canvas.appendChild(topbar);
+
+      const previewBtn = document.createElement('div');
+      previewBtn.className = 'preview-editor-button';
+      previewBtn.textContent = '预览';
+      previewBtn.style.right = (8 * scale) + 'px';
+      previewBtn.style.top = (6 * scale) + 'px';
+      previewBtn.style.width = (80 * scale) + 'px';
+      previewBtn.style.height = (40 * scale) + 'px';
+      previewBtn.style.lineHeight = (40 * scale) + 'px';
+      previewBtn.style.fontSize = (17 * scale) + 'px';
+      canvas.appendChild(previewBtn);
+
+      const typeBar = document.createElement('div');
+      typeBar.className = 'preview-question-type-bar';
+      typeBar.style.top = (48 * scale) + 'px';
+      typeBar.style.height = (94 * scale) + 'px';
+      canvas.appendChild(typeBar);
+
+      const footer = document.createElement('div');
+      footer.className = 'preview-editor-footer';
+      footer.style.height = (106 * scale) + 'px';
+      canvas.appendChild(footer);
+
+      const skinBg = document.createElement('div');
+      skinBg.style.cssText = 'position:absolute;left:0;right:0;top:0;bottom:0;z-index:0;pointer-events:none;';
+      if (!bgUrl) {
+        skinBg.style.background = `
+          radial-gradient(circle at 8% 26%, rgba(245, 213, 91, 0.38) 0 1.4px, transparent 1.6px),
+          radial-gradient(circle at 80% 40%, rgba(222, 226, 232, 0.45) 0 1px, transparent 1.1px),
+          radial-gradient(ellipse at 36% 43%, rgba(234, 218, 184, 0.18) 0 12%, transparent 34%),
+          linear-gradient(#f1f5f9 0 ${142 * scale}px, #fffaf7 ${142 * scale}px, #fffaf7 ${698 * scale}px, #eef2f6 ${698 * scale}px 100%)`;
+        skinBg.style.backgroundSize = `${11 * scale}px ${11 * scale}px, ${16 * scale}px ${16 * scale}px, 100% 100%, 100% 100%`;
+      }
+      canvas.appendChild(skinBg);
+
+      const boundary = document.createElement('div');
+      boundary.className = 'preview-content-boundary';
+      boundary.style.left = mapX(182) + 'px';
+      boundary.style.top = mapY(130) + 'px';
+      boundary.style.width = (editorBox.width * scale) + 'px';
+      boundary.style.height = (editorBox.height * scale) + 'px';
+      canvas.appendChild(boundary);
+
+      const titleEl = document.createElement('div');
+      titleEl.className = 'preview-canvas-title';
+      titleEl.textContent = (questionData.stem && questionData.stem.content) || (questionData.questionType === 'CHOICE' ? '选择题' : (questionData.questionType || '题目'));
+      titleEl.style.left = (110 * scale) + 'px';
+      titleEl.style.top = (84 * scale) + 'px';
+      titleEl.style.width = (900 * scale) + 'px';
+      titleEl.style.fontSize = (24 * scale) + 'px';
+      canvas.appendChild(titleEl);
+
+      const contexts = questionData.contexts || [];
+      contexts.forEach(ctx => {
+        const pos = ctx.coordinate || { x: 0, y: 0 };
+        const textEl = document.createElement('div');
+        textEl.className = 'preview-canvas-text';
+        textEl.textContent = ctx.content || '';
+        const rawX = mapXRaw(pos.x);
+        const rawY = mapYRaw(pos.y);
+        const fontSize = ctx.size || 40;
+        const rawWidth = Math.max(40, (ctx.displayBoxWeight || 970) * boxScaleX);
+        textEl.style.left = (rawX * scale) + 'px';
+        textEl.style.top = (rawY * scale) + 'px';
+        textEl.style.width = (rawWidth * scale) + 'px';
+        textEl.style.maxWidth = (rawWidth * scale) + 'px';
+        textEl.style.textAlign = ctx.textAlign || 'center';
+        textEl.style.fontSize = (fontSize * scale) + 'px';
+        textEl.style.color = ctx.rgb || PREVIEW_RGB;
+        canvas.appendChild(textEl);
+      });
+
+      // 题目图片渲染（莫顿字段: pictures[].{webPictureUrl,coordinate,scaleValue}）
+      const pictures = questionData.pictures || questionData.questionImages || [];
+      pictures.forEach(pic => {
+        const pos = pic.coordinate || { x: 0, y: 0 };
+        const imgEl = document.createElement('img');
+        imgEl.src = normalizeAssetUrl(pic.webPictureUrl || pic.url || '');
+        imgEl.style.cssText = `
+          position:absolute;
+          left:${mapX(pos.x)}px;
+          top:${mapY(pos.y)}px;
+          width:${(pic.width || 200) * boxScaleX * scale}px;
+          height:${(pic.height || 200) * boxScaleY * scale}px;
+          object-fit:contain;z-index:5;
+          pointer-events:none;
+        `;
+        imgEl.onerror = function() { this.style.display = 'none'; };
+        canvas.appendChild(imgEl);
+      });
+
+      const options = (questionData.questionItem && questionData.questionItem.options) || [];
+      options.forEach(opt => {
+        const pos = opt.coordinate || { x: 0, y: 0 };
+        const optEl = document.createElement('div');
+        optEl.className = 'preview-option';
+        optEl.style.left = mapX(pos.x) + 'px';
+        optEl.style.top = mapY(pos.y) + 'px';
+        optEl.style.width = ((opt.displayBoxWeight || 180) * boxScaleX * scale) + 'px';
+        optEl.style.height = ((opt.displayBoxHeight || 120) * boxScaleY * scale) + 'px';
+        optEl.style.transform = `scale(${(opt.scaleValue || 100) / 100})`;
+        optEl.style.transformOrigin = 'center center';
+
+        const contentEl = document.createElement('span');
+        contentEl.className = 'preview-option-content';
+        contentEl.textContent = opt.content || '';
+        contentEl.style.fontSize = ((opt.fontSize || PREVIEW_FONT_SIZE) * scale) + 'px';
+        contentEl.style.color = opt.rgb || PREVIEW_RGB;
+        optEl.appendChild(contentEl);
+
+        const optImageUrl = normalizeAssetUrl(opt.webUrl || opt.imageUrl || '');
+        if (optImageUrl) {
+          const img = document.createElement('img');
+          img.src = optImageUrl;
+          img.alt = opt.content || opt.optionIndex || '选项图片';
+          img.style.cssText = 'max-width:100%;max-height:100%;object-fit:contain;position:absolute;inset:0;margin:auto;opacity:0.9';
+          optEl.appendChild(img);
+        }
+
+        if (opt.answer) {
+          const correctEl = document.createElement('span');
+          correctEl.className = 'preview-option-correct';
+          optEl.appendChild(correctEl);
+        }
+
+        canvas.appendChild(optEl);
+      });
+
+      if (questionData.webBgmUrl || questionData.backgroundUrl || questionData.bgUrl) {
+        const bgTip = document.createElement('div');
+        bgTip.className = 'preview-placeholder';
+        bgTip.textContent = '已加载背景图预览';
+        canvas.appendChild(bgTip);
+      }
+      renderFeedbackPreviewBadge(canvas, questionData);
+    }
+
+    async function openPreviewModal(index) {
+      const questions = getCurrentQuestions();
+      if (!questions || index < 0 || index >= questions.length) return;
+      const q = questions[index];
+
+      document.getElementById('preview-modal-title').textContent = `创建前预览：${q.name || q.stem.slice(0, 20)}`;
+      document.getElementById('preview-resolution').textContent = `${q.resolution || '1334*750'}`;
+      document.getElementById('preview-modal').classList.remove('hidden');
+
+      const canvas = document.getElementById('preview-canvas');
+      canvas.innerHTML = '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#8d6e63;font-size:14px">正在根据最终 questionData 构建预览...</div>';
+
+      try {
+        const questionData = await fetchPreviewQuestionData(q);
+        document.getElementById('preview-resolution').textContent = `${questionData.resolution || q.resolution || '1334*750'}`;
+        renderQuestionDataPreview(questionData);
+      } catch (e) {
+        console.error('创建前预览失败:', e);
+        canvas.innerHTML = `<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#ef4444;font-size:14px;padding:24px;text-align:center">预览失败：${escapeHtml(e.message || '未知错误')}</div>`;
+      }
+    }
+
+    function closePreviewModal() {
+      document.getElementById('preview-modal').classList.add('hidden');
+    }
+
+    // ========== 真实截图预览 ==========
+    let previewCreateNoticeAccepted = false;
+
+    function getGenerationDefaults() {
+      return {
+        subjectId: parseInt(document.getElementById('default-subject-select').value) || 0,
+        defaultName: document.getElementById('default-name-input').value.trim(),
+        defaultGrade: parseInt(document.getElementById('default-grade-select').value) || 0,
+        defaultStage: parseInt(document.getElementById('default-stage-select').value) || 0,
+        defaultDifficulty: parseInt(document.getElementById('default-difficulty-select').value) || 0,
+        defaultWrongFeedback: document.getElementById('wrong-feedback-input').value.trim(),
+        defaultCorrectFeedback: document.getElementById('correct-feedback-input').value.trim(),
+        defaultWrongImg: document.getElementById('wrong-img-input').value.trim(),
+        defaultCorrectImg: document.getElementById('correct-img-input').value.trim(),
+        defaultWrongAudio: document.getElementById('wrong-audio-input').value.trim(),
+        defaultCorrectAudio: document.getElementById('correct-audio-input').value.trim(),
+        defaultQuestionImages: document.getElementById('default-images-input').value.trim(),
+        defaultBackgroundUrl: document.getElementById('default-bg-input').value.trim(),
+        // 条件反馈默认值
+        defaultConditionFeedback: {
+          minWrong: parseInt(document.getElementById('default-cond-min').value) || 0,
+          maxWrong: parseInt(document.getElementById('default-cond-max').value) || 0,
+          content: document.getElementById('default-cond-text').value.trim(),
+          imageUrl: document.getElementById('default-cond-img').value.trim(),
+          audioUrl: document.getElementById('default-cond-audio').value.trim(),
+        },
+      };
+    }
+
+    function buildPreviewSignature(q, defaults) {
+      return JSON.stringify({
+        stem: q.stem,
+        contexts: q.contexts || [],
+        options: q.options || [],
+        answer: q.answer,
+        name: q.name || '',
+        subjectId: q.subjectId || 0,
+        resolution: q.resolution || '',
+        grade: q.grade || 0,
+        stage: q.stage || 0,
+        difficulty: q.difficulty || 0,
+        knowledge: q.knowledge || '',
+        wrongFeedback: q.wrongFeedback || '',
+        correctFeedback: q.correctFeedback || '',
+        wrongFeedbackImg: q.wrongFeedbackImg || '',
+        correctFeedbackImg: q.correctFeedbackImg || '',
+        wrongFeedbackAudio: q.wrongFeedbackAudio || '',
+        correctFeedbackAudio: q.correctFeedbackAudio || '',
+        questionImages: q.questionImages || [],
+        backgroundUrl: q.backgroundUrl || '',
+        conditionFeedbacks: q.conditionFeedbacks || [],
+        defaults,
+      });
+    }
+
+    async function showQuestionScreenshot(questionId, title, loadingText) {
+      if (!authToken || !authCookie) {
+        alert('请先登录（填写 Cookie 和 Token）');
+        return;
+      }
+
+      document.getElementById('real-preview-title').textContent = title;
+      const loading = document.getElementById('real-preview-loading');
+      const loadingMsg = loading.querySelector('p');
+      if (loadingMsg) loadingMsg.textContent = loadingText || '正在打开莫顿页面截图，首次约需 5~10 秒...';
+      loading.classList.remove('hidden');
+      document.getElementById('real-preview-content').classList.add('hidden');
+      document.getElementById('real-preview-error').classList.add('hidden');
+      document.getElementById('real-preview-modal').classList.remove('hidden');
+
+      try {
+        const resp = await fetch('/api/screenshot/capture', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            questionId,
+            cookie: authCookie,
+            token: authToken,
+          }),
+        });
+
+        if (!resp.ok) {
+          const errText = await resp.text();
+          throw new Error(errText || `截图失败 (HTTP ${resp.status})`);
+        }
+
+        const blob = await resp.blob();
+        const imgUrl = URL.createObjectURL(blob);
+        const img = document.getElementById('real-preview-img');
+        if (img.src && img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
+        img.src = imgUrl;
+
+        loading.classList.add('hidden');
+        document.getElementById('real-preview-content').classList.remove('hidden');
+      } catch (e) {
+        console.error('截图预览失败:', e);
+        document.getElementById('real-preview-error-msg').textContent = e.message || '截图失败';
+        loading.classList.add('hidden');
+        document.getElementById('real-preview-error').classList.remove('hidden');
+      }
+    }
+
+    async function openMortonPreview(index) {
+      const questions = getCurrentQuestions();
+      if (!questions || index < 0 || index >= questions.length) return;
+      if (!authToken || !authCookie) {
+        alert('请先登录（填写 Cookie 和 Token）');
+        return;
+      }
+
+      const q = questions[index];
+      const defaults = getGenerationDefaults();
+      const signature = buildPreviewSignature(q, defaults);
+
+      if (q.previewQuestionId && q.previewSignature === signature) {
+        await showQuestionScreenshot(
+          q.previewQuestionId,
+          `👁 莫顿预览 — #${q.previewQuestionId} ${q.name || q.stem.slice(0, 15)}`,
+          '正在打开已创建的莫顿预览题截图...'
+        );
+        return;
+      }
+
+      if (!previewCreateNoticeAccepted) {
+        const ok = confirm('莫顿真实预览需要先在莫顿系统创建一条带【预览-可删除】前缀的预览题，当前未接入删除接口，后续需要在莫顿后台手动清理。\n\n是否继续创建预览？');
+        if (!ok) return;
+        previewCreateNoticeAccepted = true;
+      }
+
+      document.getElementById('real-preview-title').textContent = `👁 正在创建莫顿预览 — ${q.name || q.stem.slice(0, 15)}`;
+      const loading = document.getElementById('real-preview-loading');
+      const loadingMsg = loading.querySelector('p');
+      if (loadingMsg) loadingMsg.textContent = '正在创建莫顿预览题并准备截图，首次约需 5~10 秒...';
+      loading.classList.remove('hidden');
+      document.getElementById('real-preview-content').classList.add('hidden');
+      document.getElementById('real-preview-error').classList.add('hidden');
+      document.getElementById('real-preview-modal').classList.remove('hidden');
+
+      try {
+        const resp = await fetch('/api/question/preview-create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question: q,
+            cookie: authCookie,
+            token: authToken,
+            ...defaults,
+          }),
+        });
+        const data = await resp.json();
+        if (!resp.ok || !data.success) {
+          throw new Error(data.error || `预览题创建失败 (HTTP ${resp.status})`);
+        }
+
+        q.previewQuestionId = data.previewQuestionId;
+        q.previewSignature = signature;
+        q.previewError = '';
+        renderPreview();
+
+        await showQuestionScreenshot(
+          data.previewQuestionId,
+          `👁 莫顿预览 — #${data.previewQuestionId} ${q.name || q.stem.slice(0, 15)}`,
+          '预览题已创建，正在打开莫顿页面截图...'
+        );
+      } catch (e) {
+        q.previewError = e.message || '预览失败';
+        console.error('莫顿预览失败:', e);
+        document.getElementById('real-preview-error-msg').textContent = q.previewError;
+        loading.classList.add('hidden');
+        document.getElementById('real-preview-error').classList.remove('hidden');
+      }
+    }
+    async function openRealPreview(index) {
+      const questions = getCurrentQuestions();
+      if (!questions || index < 0 || index >= questions.length) return;
+      const group = fileGroups[activeFileIndex];
+      const r = group.results[index];
+      if (!r || !r.success) {
+        alert('该题目尚未生成，无法获取真实预览');
+        return;
+      }
+
+      const q = questions[index];
+      await showQuestionScreenshot(
+        r.questionId,
+        `📸 真实预览 — #${r.questionId} ${q.name || q.stem.slice(0, 15)}`,
+        '正在打开莫顿正式题截图，首次约需 5~10 秒...'
+      );
+    }
+
+    function closeRealPreview() {
+      document.getElementById('real-preview-modal').classList.add('hidden');
+      // 释放 blob URL 避免内存泄漏
+      const img = document.getElementById('real-preview-img');
+      if (img.src && img.src.startsWith('blob:')) {
+        URL.revokeObjectURL(img.src);
+        img.src = '';
+      }
+    }
+  </script>
+</body>
+</html>

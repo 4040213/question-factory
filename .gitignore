@@ -1,0 +1,7 @@
+node_modules/
+venv/
+__pycache__/
+.workbuddy/
+1.py
+test_layout2.py
+package-lock.json
