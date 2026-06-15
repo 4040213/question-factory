@@ -458,10 +458,15 @@ def _calculate_smart_layout(
         text_top_area_h = text_total_h
         img_total_h = 0
 
-    # 2d. 选项可用空间
+    # 2d. 选项可用空间 — 无内容时自动垂直居中
     upper_content_h = (img_total_h + MIN_GAP if has_images else 0) + text_top_area_h
     option_available_h = CH - PAD_TOP - upper_content_h - MIN_GAP - PAD_BOTTOM
-    OPTION_H = max(100, min(160, option_available_h))
+    OPTION_H = max(100, min(130, option_available_h))
+
+    if upper_content_h == 0:
+        option_y_base = CT + PAD_TOP + (CH - PAD_TOP - PAD_BOTTOM - OPTION_H) // 2
+    else:
+        option_y_base = CB - PAD_BOTTOM - OPTION_H
 
     # ══════════════════════════════════════════════
     #  阶段 3: PLACE — 在分区内放置元素
@@ -527,8 +532,11 @@ def _calculate_smart_layout(
             })
             current_y += m["total_height"] + 16
 
-    # 3c. 放置选项
-    option_y_base = CB - PAD_BOTTOM - OPTION_H
+    # 3c. 放置选项 — 无内容时垂直居中
+    if upper_content_h == 0:
+        option_y_base = CT + PAD_TOP + (CH - PAD_TOP - PAD_BOTTOM - OPTION_H) // 2
+    else:
+        option_y_base = CB - PAD_BOTTOM - OPTION_H
 
     # 动态宽度与间距
     if options_count == 2:
@@ -780,8 +788,8 @@ def _build_insert_payload(item: QuestionItem, subject_id: int) -> Dict[str, Any]
         "resolution": res.replace("高清", "").strip(),
         "questionItem": {
             "displayNumber": False,
-            "displayBox": False,
-            "newDisplayBox": False,
+            "displayBox": True,
+            "newDisplayBox": True,
             "options": options,
         },
         "questionType": "CHOICE",
@@ -862,6 +870,12 @@ async def preview_create(body: PreviewCreateRequest) -> Dict[str, Any]:
             item.name = f"{PREVIEW_NAME_PREFIX}{original_name}"
 
         payload, question_data = _build_insert_payload(item, body.subjectId)
+        # DEBUG: 打印发送给莫顿的选项坐标
+        qd = payload.get("questionData", {})
+        qi = qd.get("questionItem", {})
+        for o in qi.get("options", []):
+            coord = o.get("coordinate", {})
+            print(f"[INSERT_DEBUG] 选项{o.get('optionIndex','?')}: x={coord.get('x')}, y={coord.get('y')}, w={o.get('displayBoxWeight')}, h={o.get('displayBoxHeight')}")
         result = await client.post(f"{QUESTION_ROOT}/insert", json=payload)
 
         if result.get("code") != 200:
@@ -975,6 +989,12 @@ async def batch_create_stream(body: BatchRequest):
             for idx, item in enumerate(body.questions):
                 try:
                     payload, question_data = _build_insert_payload(item, body.subjectId)
+                    # DEBUG: 打印选项坐标
+                    qd = payload.get("questionData", {})
+                    qi = qd.get("questionItem", {})
+                    for o in qi.get("options", []):
+                        coord = o.get("coordinate", {})
+                        print(f"[STREAM_DEBUG] 选项{o.get('optionIndex','?')}: x={coord.get('x')}, y={coord.get('y')}, w={o.get('displayBoxWeight')}, h={o.get('displayBoxHeight')}")
                     # DEBUG: 看发送给莫顿的 content 里换行符是什么格式
                     ctxs = payload.get("questionData", {}).get("contexts", [])
                     if ctxs:

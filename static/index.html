@@ -6,684 +6,308 @@
   <title>试题批量生成工具</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #0b0e14; --bg-card: #131720; --bg-input: #1a1e2a;
+      --border: rgba(255,255,255,0.06); --accent: #7c5cfc; --accent-hover: #6a48e8;
+      --accent-bg: rgba(124,92,252,0.1); --accent-border: rgba(124,92,252,0.2);
+      --text: #e4e6ed; --text-dim: #7d8292; --text-muted: #545868;
+      --green: #22c55e; --green-bg: rgba(34,197,94,0.1);
+      --red: #ef4444; --red-bg: rgba(239,68,68,0.1);
+      --orange: #f59e0b; --radius: 10px; --radius-sm: 6px;
+    }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: #0f172a;
-      color: #e2e8f0;
-      min-height: 100vh;
-      padding: 24px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg); color: var(--text); min-height: 100vh; font-size: 16px;
+      padding: 0; -webkit-font-smoothing: antialiased;
     }
-    .container { max-width: 1000px; margin: 0 auto; }
-    h1 { font-size: 24px; margin-bottom: 8px; color: #fff; }
-    .subtitle { color: #94a3b8; font-size: 14px; margin-bottom: 24px; }
-
-    .card {
-      background: rgba(30, 41, 59, 0.8);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 12px;
-      padding: 24px;
-      margin-bottom: 16px;
+    .page-header {
+      padding: 28px 32px 20px; border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, #10141f 0%, var(--bg) 100%); text-align: center;
     }
-    .card h2 { font-size: 16px; margin-bottom: 12px; color: #cbd5e1; }
-
-    label { display: block; font-size: 13px; color: #94a3b8; margin-bottom: 6px; }
-    input, textarea {
-      width: 100%;
-      padding: 10px 12px;
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 8px;
-      background: rgba(15, 23, 42, 0.6);
-      color: #e2e8f0;
-      font-size: 14px;
-      outline: none;
-      transition: border-color 0.2s;
-    }
-    input:focus, textarea:focus { border-color: #6366f1; }
-    textarea { resize: vertical; min-height: 80px; }
-
-    .btn {
-      display: inline-block;
-      padding: 10px 20px;
-      border: none;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    .btn-primary { background: #6366f1; color: #fff; }
-    .btn-primary:hover { background: #4f46e5; }
-    .btn-primary:disabled { background: #4b5563; cursor: not-allowed; }
-    .btn-success { background: #059669; color: #fff; }
-    .btn-success:hover { background: #047857; }
-    .btn-success:disabled { background: #4b5563; cursor: not-allowed; }
-    .btn-danger { background: #dc2626; color: #fff; }
-    .btn-danger:hover { background: #b91c1c; }
-
-    .status {
-      padding: 8px 12px;
-      border-radius: 8px;
-      font-size: 13px;
-      margin-top: 12px;
-    }
-    .status-success { background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); color: #86efac; }
-    .status-error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; }
-    .status-info { background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.3); color: #a5b4fc; }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-      margin-top: 12px;
-    }
-    th, td {
-      padding: 8px 10px;
-      border: 1px solid rgba(255,255,255,0.06);
-      text-align: left;
-      vertical-align: top;
-    }
-    th { background: rgba(99,102,241,0.1); color: #a5b4fc; font-weight: 500; }
-    td { color: #cbd5e1; }
+    .page-header h1 { font-size: 28px; font-weight: 700; color: #fff; letter-spacing: -0.3px; display: flex; align-items: center; justify-content: center; gap: 12px; }
+    .page-header h1 span { background: linear-gradient(135deg, var(--accent), #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .page-header .subtitle { color: var(--text-dim); font-size: 15px; margin-top: 6px; }
+    .main-layout { display: flex; flex-direction: column; gap: 16px; max-width: 1600px; margin: 0 auto; padding: 16px 20px; }
+    .top-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: stretch; }
+    .main-left { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+    .main-right { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+    .main-left .card, .main-right .card { margin-bottom: 0; flex-shrink: 0; }
+    .main-left .card:last-child, .main-right .card:last-child { flex: 1; display: flex; flex-direction: column; }
+    .main-left .card:last-child .card-body, .main-right .card:last-child .card-body { flex: 1; display: flex; flex-direction: column; justify-content: space-evenly; }
+    @media (max-width: 1100px) { .top-row { grid-template-columns: 1fr; } }
+    @media (max-width: 750px) { .preview-canvas { transform: scale(0.65); transform-origin: center; } }
+    .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; margin-bottom: 14px; transition: border-color .2s, box-shadow .2s; }
+    .card:hover { border-color: rgba(124,92,252,0.25); box-shadow: 0 2px 16px rgba(0,0,0,0.25); }
+    .card h2 { font-size: 17px; font-weight: 600; margin-bottom: 14px; color: #fff; display: flex; align-items: center; gap: 8px; }
+    .card h2 .icon { font-size: 20px; }
+    label { display: block; font-size: 14px; color: var(--text-dim); margin-bottom: 6px; font-weight: 500; }
+    input, textarea, select { width: 100%; padding: 11px 13px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-input); color: var(--text); font-size: 15px; font-family: inherit; outline: none; transition: border-color .2s, box-shadow .2s; }
+    input:focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(124,92,252,0.12); }
+    textarea { resize: vertical; min-height: 38px; }
+    select { cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%237d8292' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 32px; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 20px; border: none; border-radius: var(--radius-sm); font-size: 15px; font-weight: 600; cursor: pointer; transition: all .2s; font-family: inherit; white-space: nowrap; }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent-hover); box-shadow: 0 4px 12px rgba(124,92,252,0.3); }
+    .btn-primary:disabled { background: #2d2f3a; color: #555; cursor: not-allowed; box-shadow: none; }
+    .btn-success { background: var(--green); color: #fff; }
+    .btn-success:hover { background: #16a34a; box-shadow: 0 4px 12px rgba(34,197,94,0.25); }
+    .btn-success:disabled { background: #2d2f3a; color: #555; cursor: not-allowed; box-shadow: none; }
+    .btn-danger { background: var(--red); color: #fff; }
+    .btn-danger:hover { background: #dc2626; box-shadow: 0 4px 12px rgba(239,68,68,0.25); }
+    .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-dim); }
+    .btn-outline:hover { background: var(--bg-input); color: var(--text); }
+    .btn-sm { padding: 8px 15px; font-size: 14px; border-radius: 4px; }
+    .status { padding: 10px 14px; border-radius: var(--radius-sm); font-size: 15px; margin-top: 10px; font-weight: 500; line-height: 1.5; }
+    .status-success { background: var(--green-bg); border: 1px solid rgba(34,197,94,0.2); color: var(--green); }
+    .status-error { background: var(--red-bg); border: 1px solid rgba(239,68,68,0.2); color: var(--red); }
+    .status-info { background: var(--accent-bg); border: 1px solid var(--accent-border); color: #a78bfa; }
+    .table-wrap { overflow-x: auto; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { padding: 9px 10px; text-align: left; vertical-align: middle; white-space: nowrap; }
+    th { background: rgba(124,92,252,0.06); color: var(--text-dim); font-weight: 600; font-size: 14px; position: sticky; top: 0; z-index: 2; }
+    td { color: var(--text); border-top: 1px solid var(--border); font-size: 14px; }
     tr:hover td { background: rgba(255,255,255,0.02); }
-
-    .tag {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 500;
-    }
-    .tag-pending { background: rgba(148,163,184,0.2); color: #94a3b8; }
-    .tag-success { background: rgba(34,197,94,0.2); color: #86efac; }
-    .tag-error { background: rgba(239,68,68,0.2); color: #fca5a5; }
-    .tag-info { background: rgba(99,102,241,0.2); color: #a5b4fc; }
-    .tag-skip { background: rgba(245,158,11,0.2); color: #fbbf24; }
-
-    .file-input-wrapper {
-      position: relative;
-      display: inline-block;
-    }
-    .file-input-wrapper input[type="file"] {
-      position: absolute; left: 0; top: 0;
-      width: 100%; height: 100%;
-      opacity: 0; cursor: pointer;
-    }
-
-    .format-hint {
-      background: rgba(99,102,241,0.05);
-      border: 1px solid rgba(99,102,241,0.2);
-      border-radius: 8px;
-      padding: 12px;
-      font-size: 12px;
-      color: #a5b4fc;
-      margin-bottom: 16px;
-    }
-    .format-hint code {
-      background: rgba(99,102,241,0.15);
-      padding: 1px 4px;
-      border-radius: 3px;
-    }
-
+    td:first-child, th:first-child { padding-left: 12px; }
+    td:last-child, th:last-child { padding-right: 12px; }
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 10px; font-size: 13px; font-weight: 600; }
+    .badge-dim { background: rgba(255,255,255,0.05); color: var(--text-dim); }
+    .badge-green { background: var(--green-bg); color: var(--green); }
+    .badge-red { background: var(--red-bg); color: var(--red); }
+    .badge-purple { background: var(--accent-bg); color: #a78bfa; }
+    .file-input-wrapper { position: relative; display: inline-block; }
+    .file-input-wrapper input[type="file"] { position: absolute; left: 0; top: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+    .format-hint { background: var(--accent-bg); border: 1px solid var(--accent-border); border-radius: var(--radius-sm); padding: 12px 15px; font-size: 14px; color: #a78bfa; margin-bottom: 14px; line-height: 1.6; }
+    .format-hint code { background: rgba(124,92,252,0.15); padding: 1px 5px; border-radius: 3px; font-size: 13px; }
     .hidden { display: none !important; }
     .mt-12 { margin-top: 12px; }
     .mt-16 { margin-top: 16px; }
     .mb-12 { margin-bottom: 12px; }
-
-    /* 全局设置分组 */
-    .settings-group {
-      margin-top: 14px;
-      padding: 14px;
-      border: 1px solid rgba(255,255,255,0.06);
-      border-radius: 10px;
-      background: rgba(255,255,255,0.015);
-    }
-    .settings-group-label {
-      font-size: 12px;
-      color: #64748b;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 10px;
-    }
-    .settings-row {
-      display: grid;
-      gap: 10px;
-      margin-top: 8px;
-    }
+    .progress-bar-container { background: rgba(124,92,252,0.08); border-radius: var(--radius-sm); overflow: hidden; height: 26px; position: relative; margin-top: 12px; }
+    .progress-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), #a78bfa); transition: width .3s ease; border-radius: var(--radius-sm); }
+    .progress-bar-text { position: absolute; top: 3px; left: 50%; transform: translateX(-50%); font-size: 13px; color: #fff; font-weight: 600; text-shadow: 0 1px 3px rgba(0,0,0,0.4); }
+    .tabs-bar { display: flex; gap: 2px; flex-wrap: wrap; margin-bottom: 14px; border-bottom: 1px solid var(--border); }
+    .tab-btn { padding: 9px 18px; border: none; border-radius: 8px 8px 0 0; background: transparent; color: var(--text-dim); font-size: 15px; cursor: pointer; font-family: inherit; position: relative; transition: color .2s; }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: #fff; background: var(--accent-bg); }
+    .tab-btn.active::after { content: ''; position: absolute; bottom: 0; left: 8px; right: 8px; height: 2px; background: var(--accent); border-radius: 1px; }
+    .tab-badge { display: inline-block; margin-left: 4px; padding: 1px 7px; border-radius: 8px; font-size: 13px; background: rgba(255,255,255,0.06); color: var(--text-dim); }
+    .priority-hint { font-size: 15px; color: #a78bfa; background: var(--accent-bg); border: 1px solid var(--accent-border); border-left: 3px solid var(--accent); border-radius: var(--radius-sm); padding: 11px 15px; margin-bottom: 14px; }
+    .priority-hint b { color: #fff; }
+    .settings-group { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: rgba(255,255,255,0.01); }
+    .settings-group-label { font-size: 14px; color: #a78bfa; text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 10px; font-weight: 700; }
+    .settings-group-label small { color: var(--text-muted); text-transform: none; letter-spacing: 0; font-weight: 400; }
+    .settings-row { display: grid; gap: 8px; margin-top: 6px; }
     .settings-row.cols-2 { grid-template-columns: 1fr 1fr; }
     .settings-row.cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
-    .settings-row label {
-      font-size: 12px;
-      color: #64748b;
-      margin-bottom: 4px;
-    }
-    .settings-row small { color: #475569; font-size: 11px; }
-    .settings-row select,
-    .settings-row input {
-      width: 100%;
-      padding: 7px 9px;
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 6px;
-      background: rgba(15,23,42,0.5);
-      color: #e2e8f0;
-      font-size: 13px;
-      outline: none;
-    }
-    .settings-row select:focus,
-    .settings-row input:focus { border-color: #6366f1; }
-    .settings-group textarea {
-      width: 100%;
-      padding: 7px 9px;
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 6px;
-      background: rgba(15,23,42,0.5);
-      color: #e2e8f0;
-      font-size: 13px;
-      outline: none;
-      resize: vertical;
-      min-height: 34px;
-    }
-    .settings-group textarea:focus { border-color: #6366f1; }
-
-    .priority-hint {
-      font-size: 12px;
-      color: #a5b4fc;
-      background: rgba(99,102,241,0.08);
-      border: 1px solid rgba(99,102,241,0.15);
-      border-radius: 8px;
-      padding: 8px 12px;
-      margin: 8px 0 14px;
-    }
-
-    .fb-sub-group { margin-bottom: 8px; }
-    .fb-sub-label {
-      font-size: 13px;
-      color: #cbd5e1;
-      margin-bottom: 6px;
-      font-weight: 500;
-    }
-    .fb-divider {
-      border-top: 1px solid rgba(255,255,255,0.05);
-      margin: 10px 0;
-    }
-
-    .settings-hint {
-      font-size: 12px;
-      color: #64748b;
-      line-height: 1.6;
-      margin: 0;
-    }
-    .settings-hint b { color: #94a3b8; }
-
-    /* 勾选框 */
-    .q-select, #select-all-checkbox {
-      width: 16px; height: 16px;
-      accent-color: #6366f1;
-      cursor: pointer;
-    }
-
-    .progress-bar-container {
-      background: rgba(99,102,241,0.15);
-      border-radius: 8px;
-      overflow: hidden;
-      height: 28px;
-      position: relative;
-      margin-top: 12px;
-    }
-    .progress-bar-fill {
-      height: 100%;
-      background: linear-gradient(90deg, #6366f1, #8b5cf6);
-      transition: width 0.3s ease;
-      border-radius: 8px;
-    }
-    .progress-bar-text {
-      position: absolute;
-      top: 5px;
-      left: 50%;
-      transform: translateX(-50%);
-      font-size: 12px;
-      color: #e2e8f0;
-      font-weight: 500;
-      text-shadow: 0 1px 2px rgba(0,0,0,0.5);
-    }
-
-    /* 多文件标签页 */
-    .tabs-bar {
-      display: flex;
-      gap: 4px;
-      flex-wrap: wrap;
-      margin-bottom: 16px;
-      border-bottom: 1px solid rgba(255,255,255,0.08);
-    }
-    .tab-btn {
-      padding: 8px 16px;
-      border: none;
-      border-radius: 8px 8px 0 0;
-      background: transparent;
-      color: #94a3b8;
-      font-size: 13px;
-      cursor: pointer;
-      position: relative;
-      white-space: nowrap;
-      max-width: 200px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .tab-btn:hover { color: #e2e8f0; background: rgba(255,255,255,0.03); }
-    .tab-btn.active {
-      color: #a5b4fc;
-      background: rgba(99,102,241,0.1);
-    }
-    .tab-btn.active::after {
-      content: '';
-      position: absolute;
-      bottom: 0; left: 8px; right: 8px;
-      height: 2px;
-      background: #6366f1;
-      border-radius: 1px;
-    }
-    .tab-badge {
-      display: inline-block;
-      margin-left: 6px;
-      padding: 1px 6px;
-      border-radius: 10px;
-      font-size: 11px;
-      background: rgba(99,102,241,0.2);
-      color: #a5b4fc;
-    }
-    .tab-btn.active .tab-badge {
-      background: rgba(99,102,241,0.4);
-      color: #c7d2fe;
-    }
-
-    .row-input {
-      width: 130px;
-      padding: 4px 6px;
-      border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 4px;
-      background: rgba(15, 23, 42, 0.6);
-      color: #e2e8f0;
-      font-size: 11px;
-      outline: none;
-    }
-    .row-input:focus { border-color: #6366f1; }
-
-    .modal-overlay {
-      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0,0,0,0.7);
-      display: flex; align-items: center; justify-content: center;
-      z-index: 1000;
-    }
-    .modal-box {
-      background: #1e293b; border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 12px; padding: 24px;
-      max-width: 520px; width: 90%; max-height: 80vh; overflow-y: auto;
-    }
-    .modal-box h3 { font-size: 16px; margin-bottom: 16px; color: #fff; }
-    .modal-box label { font-size: 12px; color: #94a3b8; margin-bottom: 4px; }
-    .modal-box .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .settings-row label { font-size: 14px; color: var(--text-dim); margin-bottom: 4px; font-weight: 500; }
+    .settings-row small { color: var(--text-muted); font-size: 13px; }
+    .settings-row select, .settings-row input, .settings-group textarea { padding: 10px 12px; font-size: 15px; border-radius: var(--radius-sm); }
+    .settings-hint { font-size: 14px; color: var(--text-dim); line-height: 1.5; margin: 0; }
+    .settings-hint b { color: #a78bfa; }
+    .fb-sub-group { margin-bottom: 6px; }
+    .fb-sub-label { font-size: 15px; color: #fff; margin-bottom: 6px; font-weight: 600; }
+    .fb-divider { border-top: 1px solid var(--border); margin: 8px 0; }
+    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .modal-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; max-width: 560px; width: 92%; max-height: 85vh; overflow-y: auto; }
+    .modal-box h3 { font-size: 18px; margin-bottom: 16px; color: #fff; font-weight: 600; }
+    .modal-box label { font-size: 14px; color: var(--text-dim); margin-bottom: 4px; }
+    .modal-box .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .modal-box .btn-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
-
-    /* 预览弹窗 */
-    .preview-modal-box {
-      background: #1e293b; border: 1px solid rgba(255,255,255,0.1);
-      border-radius: 16px; padding: 24px;
-      max-width: 1100px; width: 94%; max-height: 92vh; overflow-y: auto;
-      display: flex; flex-direction: column; align-items: center;
-    }
-    .preview-modal-box h3 { font-size: 16px; margin-bottom: 16px; color: #fff; width: 100%; display: flex; justify-content: space-between; align-items: center; }
-    .preview-canvas-wrapper {
-      background: #ece6da;
-      border-radius: 12px;
-      padding: 12px;
-      display: flex; justify-content: center; align-items: center;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-    }
-    .preview-canvas {
-      width: 960px; height: 667px;
-      background: #fffaf7;
-      border: none;
-      border-radius: 4px;
-      position: relative;
-      overflow: hidden;
-    }
-    .preview-editor-topbar {
-      position: absolute;
-      left: 0; right: 0; top: 0; height: 48px;
-      background: #f1f5f9;
-      color: #f00;
-      font-size: 18px;
-      line-height: 48px;
-      padding-left: 26px;
-      z-index: 4;
-    }
-    .preview-editor-button {
-      position: absolute;
-      right: 8px; top: 6px;
-      width: 80px; height: 40px;
-      background: #1890ff;
-      color: #fff;
-      font-size: 17px;
-      line-height: 40px;
-      text-align: center;
-      border-radius: 2px;
-      z-index: 5;
-    }
-    .preview-question-type-bar {
-      position: absolute;
-      left: 0; right: 0; top: 48px; height: 94px;
-      background: #f1f5f9;
-      z-index: 1;
-    }
-    .preview-editor-footer {
-      position: absolute;
-      left: 0; right: 0; bottom: 0; height: 106px;
-      background: #eef2f6;
-      z-index: 1;
-    }
-    .preview-content-boundary {
-      position: absolute;
-      border: 1.5px dashed #9bd66f;
-      box-sizing: border-box;
-      pointer-events: none;
-      z-index: 2;
-    }
-    .preview-placeholder {
-      position: absolute;
-      left: 16px; right: 16px; bottom: 12px;
-      text-align: center;
-      color: rgba(93,64,55,0.45);
-      font-size: 12px;
-      pointer-events: none;
-    }
-    .preview-canvas-title {
-      position: absolute;
-      top: 68px;
-      left: 182px;
-      width: 970px;
-      transform: none;
-      font-size: 22px;
-      color: #8b8b93;
-      letter-spacing: 0;
-      text-align: left;
-      font-weight: 600;
-      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
-      z-index: 6;
-    }
-    .preview-canvas-text {
-      position: absolute;
-      color: #8d6e63;
-      font-weight: 600;
-      line-height: 1.18;
-      text-align: center;
-      white-space: normal;
-      word-break: break-all;
-      overflow-wrap: anywhere;
-      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
-      box-sizing: border-box;
-      z-index: 4;
-    }
-    .preview-option {
-      position: absolute;
-      background: #fff;
-      border: 1.5px solid #e0d0c0;
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-      z-index: 4;
-    }
-    .preview-option-content {
-      font-size: 18px;
-      color: #5d4037;
-      font-weight: 600;
-      text-align: center;
-      padding: 4px 8px;
-      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
-      white-space: normal;
-      word-break: break-all;
-      line-height: 1.15;
-      max-width: 3.2em;
-    }
-    .preview-option-correct {
-      position: absolute;
-      bottom: 3px;
-      right: 3px;
-      width: 10px;
-      height: 10px;
-      background: #ef4444;
-      border-radius: 50%;
-      border: 1.5px solid #fff;
-      box-shadow: 0 0 3px rgba(239,68,68,0.4);
-    }
-    .preview-close-btn {
-      background: rgba(255,255,255,0.1);
-      border: none;
-      color: #94a3b8;
-      font-size: 20px;
-      width: 32px; height: 32px;
-      border-radius: 50%;
-      cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
-    }
-    .preview-close-btn:hover { background: rgba(255,255,255,0.2); color: #fff; }
-    @media (max-width: 750px) {
-      .preview-canvas { transform: scale(0.65); transform-origin: center; }
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.5; transform: scale(0.95); }
-    }
+    .preview-modal-box { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; max-width: 1060px; width: 95%; max-height: 94vh; overflow-y: auto; display: flex; flex-direction: column; align-items: center; }
+    .preview-modal-box h3 { font-size: 16px; margin-bottom: 14px; color: #fff; width: 100%; display: flex; justify-content: space-between; align-items: center; }
+    .preview-canvas-wrapper { background: #ece6da; border-radius: 10px; padding: 12px; display: flex; justify-content: center; align-items: center; }
+    .preview-canvas { width: 960px; height: 667px; background: #fffaf7; border: none; border-radius: 4px; position: relative; overflow: hidden; }
+    .preview-editor-topbar { position: absolute; left: 0; right: 0; top: 0; height: 48px; background: #f1f5f9; color: #f00; font-size: 18px; line-height: 48px; padding-left: 26px; z-index: 4; }
+    .preview-editor-button { position: absolute; right: 8px; top: 6px; width: 80px; height: 40px; background: #1890ff; color: #fff; font-size: 17px; line-height: 40px; text-align: center; border-radius: 2px; z-index: 5; }
+    .preview-question-type-bar { position: absolute; left: 0; right: 0; top: 48px; height: 94px; background: #f1f5f9; z-index: 1; }
+    .preview-editor-footer { position: absolute; left: 0; right: 0; bottom: 0; height: 106px; background: #eef2f6; z-index: 1; }
+    .preview-content-boundary { position: absolute; border: 1.5px dashed #9bd66f; box-sizing: border-box; pointer-events: none; z-index: 2; }
+    .preview-placeholder { position: absolute; left: 16px; right: 16px; bottom: 12px; text-align: center; color: rgba(93,64,55,0.45); font-size: 13px; pointer-events: none; }
+    .preview-canvas-title { position: absolute; top: 68px; left: 182px; width: 970px; font-size: 22px; color: #8b8b93; text-align: left; font-weight: 600; font-family: "Microsoft YaHei", sans-serif; z-index: 6; }
+    .preview-canvas-text { position: absolute; color: #8d6e63; font-weight: 600; line-height: 1.18; text-align: center; white-space: normal; word-break: break-all; overflow-wrap: anywhere; font-family: "Microsoft YaHei", sans-serif; box-sizing: border-box; z-index: 4; }
+    .preview-option { position: absolute; background: #fff; border: 1.5px solid #e0d0c0; border-radius: 10px; display: flex; align-items: center; justify-content: center; overflow: hidden; z-index: 4; }
+    .preview-option-content { font-size: 18px; color: #5d4037; font-weight: 600; text-align: center; padding: 4px 8px; font-family: "Microsoft YaHei", sans-serif; white-space: normal; word-break: break-all; line-height: 1.15; max-width: 3.2em; }
+    .preview-option-correct { position: absolute; bottom: 3px; right: 3px; width: 10px; height: 10px; background: #ef4444; border-radius: 50%; border: 1.5px solid #fff; }
+    .preview-close-btn { background: rgba(255,255,255,0.08); border: none; color: var(--text-dim); font-size: 18px; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .preview-close-btn:hover { background: rgba(255,255,255,0.15); color: #fff; }
+    .q-select, #select-all-checkbox { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+    .row-input { width: 130px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-input); color: var(--text); font-size: 14px; outline: none; }
+    .row-input:focus { border-color: var(--accent); }
+    .help-tip { position: relative; display: inline-block; cursor: help; width: 22px; height: 22px; background: var(--accent-bg); border: 1px solid var(--accent-border); border-radius: 50%; text-align: center; line-height: 20px; font-size: 13px; color: #a78bfa; font-weight: 700; }
+    .help-tip:hover .help-tip-box { display: block; }
+    .help-tip-box { display: none; position: absolute; left: 28px; top: -8px; width: 540px; max-height: 400px; overflow-y: auto; background: var(--bg-card); border: 1px solid var(--accent-border); border-radius: var(--radius-sm); padding: 13px 15px; z-index: 100; font-size: 14px; color: var(--text-dim); line-height: 1.7; text-align: left; font-weight: 400; white-space: normal; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+    .help-tip-box code { background: rgba(124,92,252,0.12); padding: 2px 5px; border-radius: 3px; font-size: 13px; }
+    .auth-inline { display: flex; gap: 10px; align-items: flex-end; }
+    .auth-inline input { flex: 1; }
+    .auth-inline .btn { flex-shrink: 0; }
+    .card-body { margin-top: 14px; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h1>试题批量生成工具</h1>
-    <p class="subtitle">从 Excel 表格批量导入选择题</p>
-
-    <!-- Step 1: Cookie 验证 -->
-    <div class="card" id="auth-card">
-      <h2>🔐 Cookie 验证</h2>
-      <label>粘贴莫顿 Cookie（需包含 tokenCrm）</label>
-      <textarea id="cookie-input" placeholder="tokenCrm=...; userIdCrm=..."></textarea>
-      <div class="mt-12">
-        <button class="btn btn-primary" onclick="validateCookie()">验证</button>
-      </div>
-      <div id="auth-status" class="hidden"></div>
-    </div>
-
-    <!-- Step 2: 上传 Excel -->
-    <div class="card" id="upload-card">
-      <h2>📄 导入 Excel</h2>
-      <div class="format-hint">
-        表头格式：<code>题干</code> | <code>文本</code> | <code>选项A</code> | <code>选项B</code> | <code>选项C</code> | <code>选项D</code> | <code>选项E</code> | <code>选项F</code> | <code>选项G</code> | <code>选项H</code> | <code>答案</code> | <code>名称</code> | <code>学科</code> | <code>分辨率</code> | <code>年级</code> | <code>阶段</code> | <code>难度</code> | <code>知识点</code> | <code>题目图片</code> | <code>画布背景</code> | <code>答错反馈</code> | <code>答对反馈</code> | <code>答错图片</code> | <code>答对图片</code> | <code>答错音频</code> | <code>答对音频</code> | <code>最少错次</code> | <code>最多错次</code> | <code>条件反馈文本</code> | <code>条件图片URL</code> | <code>条件音频URL</code><br>
-        学科填：数学/英语/新数学/思维盒子。年级填：幼儿-小班~高三。阶段填：招生课/春/暑/秋/寒/专题课。难度：1~5。知识点分号分隔。反馈相关列移至末尾；条件反馈最少/最多错次填数字。
-      </div>
-      <div class="file-input-wrapper">
-        <button class="btn btn-primary">选择 Excel 文件（可多选）</button>
-        <input type="file" id="file-input" accept=".xlsx,.xls" multiple onchange="handleFileUpload(event)">
-      </div>
-      <div id="upload-status" class="hidden"></div>
-      <div class="priority-hint">
-        📋 <b>优先级</b>：Excel 列数据优先 → 留空时才使用下方全局默认值
-      </div>
-
-      <label>题目名称（统一）</label>
-      <input id="default-name-input" placeholder="如：数学选择题 #1（留空则使用 Excel 第8列名称）">
-
-      <!-- 基础属性：学科/难度/年级/阶段 — 4列并排 -->
-      <div class="settings-group">
-        <div class="settings-group-label">📂 基础属性 <small>(无 Excel 列时作为默认值)</small></div>
-        <div class="settings-row cols-4">
-          <div><label>学科</label><select id="default-subject-select" class="form-select"><option value="0">-- 加载中... --</option></select></div>
-          <div><label>难度</label><select id="default-difficulty-select" class="form-select"><option value="0">-- 加载中... --</option></select></div>
-          <div><label>年级</label><select id="default-grade-select" class="form-select"><option value="0">-- 加载中... --</option></select></div>
-          <div><label>阶段</label><select id="default-stage-select" class="form-select"><option value="0">-- 加载中... --</option></select></div>
-        </div>
-      </div>
-
-      <!-- 画布资源：题目图片 + 画布背景 -->
-      <div class="settings-group">
-        <div class="settings-group-label">🎨 画布资源 <small>(无 Excel 列时作为默认值)</small></div>
-        <div class="settings-row cols-2">
-          <div><label>题目图片URL <small>(分号分隔)</small></label><input id="default-images-input" placeholder="//cdn.xxx.com/img1.png; //cdn.xxx.com/img2.png"></div>
-          <div><label>画布背景URL</label><input id="default-bg-input" placeholder="//cdn.xxx.com/bg.png"></div>
-        </div>
-      </div>
-
-      <!-- 通用反馈 -->
-      <div class="settings-group">
-        <div class="settings-group-label">💬 通用反馈 <small>(无 Excel 列时作为默认值)</small></div>
-        <div class="fb-sub-group">
-          <div class="fb-sub-label">❌ 答错</div>
-          <textarea id="wrong-feedback-input" placeholder="如：再仔细想想哦，注意看选项中的关键信息..." rows="1"></textarea>
-          <div class="settings-row cols-2">
-            <div><label>图片URL</label><input id="wrong-img-input" placeholder="//cdn.xxx.com/wrong.png"></div>
-            <div><label>音频URL</label><input id="wrong-audio-input" placeholder="//cdn.xxx.com/sound.mp3"></div>
+  <div class="page-header">
+    <h1><img src="/static/logo.png" alt="logo" style="width:44px;height:44px;border-radius:8px;display:block;"><span>雪球课堂试题生成工具</span></h1>
+    <p class="subtitle">从 Excel 表格批量导入选择题到莫顿教学系统</p>
+  </div>
+  <div class="main-layout">
+    <div class="top-row">
+      <div class="main-left">
+        <!-- Cookie -->
+        <div class="card" id="auth-card" style="padding:14px 22px;">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <span style="font-size:16px;font-weight:700;color:#fff;flex-shrink:0;">🔐 Cookie</span>
+            <div class="auth-inline" style="flex:1;">
+              <textarea id="cookie-input" placeholder="粘贴 tokenCrm Cookie..." rows="1" style="resize:none"></textarea>
+              <button class="btn btn-primary" onclick="validateCookie()">验证</button>
+            </div>
           </div>
+          <div id="auth-status" class="hidden" style="margin-top:8px;"></div>
         </div>
-        <div class="fb-divider"></div>
-        <div class="fb-sub-group">
-          <div class="fb-sub-label">✅ 答对</div>
-          <textarea id="correct-feedback-input" placeholder="如：真棒！你答对了。" rows="1"></textarea>
-          <div class="settings-row cols-2">
-            <div><label>图片URL</label><input id="correct-img-input" placeholder="//cdn.xxx.com/right.png"></div>
-            <div><label>音频URL</label><input id="correct-audio-input" placeholder="//cdn.xxx.com/cheer.mp3"></div>
+
+        <!-- Import Excel -->
+        <div class="card" id="upload-card">
+          <h2><span class="icon">📄</span> 导入 Excel <span class="help-tip">?<div class="help-tip-box">表头格式：<code>题干</code> | <code>文本</code> | <code>选项A</code> | <code>选项B</code> | <code>选项C</code> | <code>选项D</code> | <code>选项E</code> | <code>选项F</code> | <code>选项G</code> | <code>选项H</code> | <code>答案</code> | <code>名称</code> | <code>学科</code> | <code>分辨率</code> | <code>年级</code> | <code>阶段</code> | <code>难度</code> | <code>知识点</code> | <code>题目图片</code> | <code>画布背景</code> | <code>答错反馈</code> | <code>答对反馈</code> | <code>答错图片</code> | <code>答对图片</code> | <code>答错音频</code> | <code>答对音频</code> | <code>最少错次</code> | <code>最多错次</code> | <code>条件反馈文本</code> | <code>条件图片URL</code> | <code>条件音频URL</code></div></span></h2>
+          <div class="file-input-wrapper"><button class="btn btn-primary" style="width:100%">选择 Excel 文件（可多选）</button><input type="file" id="file-input" accept=".xlsx,.xls" multiple onchange="handleFileUpload(event)"></div>
+          <div id="upload-status" class="hidden"></div>
+        </div>
+
+      <div class="card">
+        <div class="priority-hint" style="margin-bottom:0;">📋 <b>优先级</b>：Excel 优先 → 留空则用下方默认值</div>
+        <div class="card-body" style="margin-top:12px;">
+          <label>题目名称（统一）</label>
+          <input id="default-name-input" placeholder="如：数学选择题 #1">
+          <div class="settings-group">
+            <div class="settings-group-label">📂 基础属性 <small>(默认值)</small></div>
+            <div class="settings-row cols-4">
+              <div><label>学科</label><select id="default-subject-select"><option value="0">-- 加载 --</option></select></div>
+              <div><label>难度</label><select id="default-difficulty-select"><option value="0">-- 加载 --</option></select></div>
+              <div><label>年级</label><select id="default-grade-select"><option value="0">-- 加载 --</option></select></div>
+              <div><label>阶段</label><select id="default-stage-select"><option value="0">-- 加载 --</option></select></div>
+            </div>
+          </div>
+          <div class="settings-group">
+            <div class="settings-group-label">🎨 画布资源 <small>(默认值)</small></div>
+            <div class="settings-row cols-2">
+              <div><label>题目图片URL <small>(分号分隔)</small></label><input id="default-images-input" placeholder="//cdn.xxx.com/img1.png; img2.png"></div>
+              <div><label>画布背景URL</label><input id="default-bg-input" placeholder="//cdn.xxx.com/bg.png"></div>
+            </div>
           </div>
         </div>
       </div>
+      </div>
+    <div class="main-right">
 
-      <!-- 条件反馈 -->
-      <div class="settings-group">
-        <div class="settings-group-label">🎯 条件反馈 <small>(无 Excel 列时作为默认值)</small></div>
-        <p class="settings-hint">触发条件：按错误次数范围匹配。仅在逐题「编辑反馈」中未设置时生效。</p>
-        <div class="settings-row cols-2">
-          <div><label>最少错次</label><input id="default-cond-min" type="number" min="0" max="999" value="0" style="width:100%"></div>
-          <div><label>最多错次</label><input id="default-cond-max" type="number" min="0" max="999" value="0" style="width:100%"></div>
+      <div class="card">
+        <h2><span class="icon">💬</span> 通用反馈</h2>
+        <div class="card-body">
+          <div class="fb-sub-group">
+            <div class="fb-sub-label">❌ 答错</div>
+            <textarea id="wrong-feedback-input" placeholder="如：再仔细想想哦..." rows="1"></textarea>
+            <div class="settings-row cols-2">
+              <div><label>图片URL</label><input id="wrong-img-input" placeholder="//cdn.xxx.com/wrong.png"></div>
+              <div><label>音频URL</label><input id="wrong-audio-input" placeholder="//cdn.xxx.com/sound.mp3"></div>
+            </div>
+          </div>
+          <div class="fb-divider"></div>
+          <div class="fb-sub-group">
+            <div class="fb-sub-label">✅ 答对</div>
+            <textarea id="correct-feedback-input" placeholder="如：真棒！你答对了。" rows="1"></textarea>
+            <div class="settings-row cols-2">
+              <div><label>图片URL</label><input id="correct-img-input" placeholder="//cdn.xxx.com/right.png"></div>
+              <div><label>音频URL</label><input id="correct-audio-input" placeholder="//cdn.xxx.com/cheer.mp3"></div>
+            </div>
+          </div>
         </div>
-        <div style="margin-top:8px"><label>反馈文本</label><textarea id="default-cond-text" placeholder="根据错误次数给出针对性提醒..." rows="1"></textarea></div>
-        <div class="settings-row cols-2" style="margin-top:8px">
-          <div><label>图片URL</label><input id="default-cond-img" placeholder="//cdn.xxx.com/hint.png"></div>
-          <div><label>音频URL</label><input id="default-cond-audio" placeholder="//cdn.xxx.com/remind.mp3"></div>
+      </div>
+
+      <div class="card">
+        <h2><span class="icon">🎯</span> 条件反馈</h2>
+        <div class="card-body">
+          <p class="settings-hint">按错误次数范围匹配。仅在逐题「编辑反馈」中未设置时生效。</p>
+          <div class="settings-row cols-2" style="margin-top:8px">
+            <div><label>最少错次</label><input id="default-cond-min" type="number" min="0" max="999" value="0"></div>
+            <div><label>最多错次</label><input id="default-cond-max" type="number" min="0" max="999" value="0"></div>
+          </div>
+          <div style="margin-top:8px"><label>反馈文本</label><textarea id="default-cond-text" placeholder="根据错误次数给出针对性提醒..." rows="1"></textarea></div>
+          <div class="settings-row cols-2" style="margin-top:8px">
+            <div><label>图片URL</label><input id="default-cond-img" placeholder="//cdn.xxx.com/hint.png"></div>
+            <div><label>音频URL</label><input id="default-cond-audio" placeholder="//cdn.xxx.com/remind.mp3"></div>
+          </div>
         </div>
       </div>
     </div>
-
-    <!-- Step 3: 预览和生成 -->
-    <div class="card hidden" id="preview-card">
-      <h2>📋 预览</h2>
-      <div id="tabs-bar" class="tabs-bar"></div>
-      <div id="preview-info" class="mb-12"></div>
-      <div style="overflow-x: auto;">
-        <table id="preview-table">
-          <thead>
-            <tr>
+  </div>
+  <div class="bottom-full">
+    <div class="card" id="preview-card">
+      <h2><span class="icon">📋</span> 题目预览</h2>
+        <div id="tabs-bar" class="tabs-bar"></div>
+        <div id="preview-info" style="font-size:15px;color:var(--text-dim);margin-bottom:12px;font-weight:500;">尚未导入 Excel 文件</div>
+        <div class="table-wrap">
+          <table id="preview-table">
+            <thead><tr>
               <th style="width:32px;text-align:center"><input type="checkbox" id="select-all-checkbox" onclick="toggleSelectAll()" title="全选/取消"></th>
-              <th>#</th><th>题干</th><th>名称</th><th>选项</th><th>答案</th><th>学科</th><th>年级</th><th>阶段</th><th>难度</th><th>图片</th><th>背景</th><th>反馈状态</th><th>生成结果</th><th>操作</th>
-            </tr>
-          </thead>
-          <tbody id="preview-tbody"></tbody>
-        </table>
-      </div>
-      <div class="mt-16">
-        <button class="btn btn-success" id="generate-btn" onclick="batchGenerate()">
-          批量生成
-        </button>
-        <button class="btn btn-success" id="generate-all-btn" onclick="batchGenerateAll()" style="margin-left:12px;background:#4f46e5;">
-          全部生成
-        </button>
-        <button class="btn" id="clear-one-btn" onclick="clearCurrent()"
-                style="margin-left:12px;background:#f59e0b;color:#fff;">
-          清空当前
-        </button>
-        <button class="btn btn-danger" id="clear-all-btn" onclick="clearAll()" style="margin-left:12px">
-          清空全部
-        </button>
-      </div>
-      <div id="generate-status" class="hidden mt-12"></div>
-      <div id="progress-container" class="hidden">
-        <div class="progress-bar-container">
-          <div id="progress-bar" class="progress-bar-fill" style="width:0%"></div>
-          <span id="progress-text" class="progress-bar-text">0%</span>
+              <th>#</th><th>题干</th><th>名称</th><th>选项</th><th>答案</th><th>学科</th><th>年级</th><th>阶段</th><th>难度</th><th>图片</th><th>背景</th><th>反馈</th><th>结果</th><th>操作</th>
+            </tr></thead>
+            <tbody id="preview-tbody"></tbody>
+          </table>
+        </div>
+        <div class="mt-16" style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-success" id="generate-btn" onclick="batchGenerate()">批量生成（已选）</button>
+          <button class="btn btn-primary" id="generate-all-btn" onclick="batchGenerateAll()">全部生成</button>
+          <button class="btn btn-outline" id="clear-one-btn" onclick="clearCurrent()">清空当前</button>
+          <button class="btn btn-danger" id="clear-all-btn" onclick="clearAll()">清空全部</button>
+        </div>
+        <div id="generate-status" class="hidden mt-12"></div>
+        <div id="progress-container" class="hidden">
+          <div class="progress-bar-container">
+            <div id="progress-bar" class="progress-bar-fill" style="width:0%"></div>
+            <span id="progress-text" class="progress-bar-text">0%</span>
+          </div>
         </div>
       </div>
     </div>
-  </div>
 
-  <!-- 反馈编辑弹窗 -->
-  <div class="modal-overlay hidden" id="fb-modal" onclick="if(event.target===this)closeFbModal()">
-    <div class="modal-box" onclick="event.stopPropagation()">
-      <h3 id="fb-modal-title">✏️ 编辑第 1 题反馈</h3>
-
-      <div style="border-bottom:1px solid rgba(255,255,255,0.1);margin-bottom:12px">
-        <p style="font-size:13px;color:#a5b4fc;margin-bottom:8px">通用反馈</p>
-      </div>
-
-      <label>答错反馈文本</label>
-      <textarea id="fb-wrong-text" rows="2" placeholder="别灰心，再想想！"></textarea>
-      <div class="grid mt-12">
-        <div><label>答错图片URL</label><input id="fb-wrong-img" placeholder="//cdn.xxx.com/wrong.png"></div>
-        <div><label>答对图片URL</label><input id="fb-right-img" placeholder="//cdn.xxx.com/right.png"></div>
-        <div><label>答错音频URL</label><input id="fb-wrong-audio" placeholder="//cdn.xxx.com/sound.mp3"></div>
-        <div><label>答对音频URL</label><input id="fb-right-audio" placeholder="//cdn.xxx.com/cheer.mp3"></div>
-      </div>
-      <label class="mt-12">答对反馈文本</label>
-      <textarea id="fb-right-text" rows="2" placeholder="太棒了，答对了！"></textarea>
-
-      <div style="border-bottom:1px solid rgba(255,255,255,0.1);margin:16px 0 12px">
-        <p style="font-size:13px;color:#f59e0b;margin-bottom:8px">⚠ 条件反馈（基于错误次数）</p>
-      </div>
-
-      <div id="cond-fb-container"></div>
-
-      <button class="btn" style="width:100%;background:rgba(245,158,11,0.2);color:#f59e0b;border:1px dashed rgba(245,158,11,0.3);text-align:center"
-              onclick="addCondFeedback()">+ 添加条件反馈</button>
-
-      <div class="btn-row">
-        <button class="btn" style="background:#4b5563;color:#fff" onclick="closeFbModal()">取消</button>
-        <button class="btn btn-primary" onclick="saveFbModal()">保存</button>
+    <div class="modal-overlay hidden" id="fb-modal" onclick="if(event.target===this)closeFbModal()">
+      <div class="modal-box" onclick="event.stopPropagation()">
+        <h3 id="fb-modal-title">✏️ 编辑反馈</h3>
+        <div style="border-bottom:1px solid var(--border);margin-bottom:12px"><p style="font-size:14px;color:var(--accent);margin-bottom:8px">通用反馈</p></div>
+        <label>答错反馈文本</label><textarea id="fb-wrong-text" rows="2" placeholder="别灰心，再想想！"></textarea>
+        <div class="grid mt-12">
+          <div><label>答错图片URL</label><input id="fb-wrong-img" placeholder="//cdn.xxx.com/wrong.png"></div>
+          <div><label>答对图片URL</label><input id="fb-right-img" placeholder="//cdn.xxx.com/right.png"></div>
+          <div><label>答错音频URL</label><input id="fb-wrong-audio" placeholder="//cdn.xxx.com/sound.mp3"></div>
+          <div><label>答对音频URL</label><input id="fb-right-audio" placeholder="//cdn.xxx.com/cheer.mp3"></div>
+        </div>
+        <label class="mt-12">答对反馈文本</label><textarea id="fb-right-text" rows="2" placeholder="太棒了，答对了！"></textarea>
+        <div style="border-bottom:1px solid var(--border);margin:16px 0 12px"><p style="font-size:14px;color:var(--orange);margin-bottom:8px">⚠ 条件反馈</p></div>
+        <div id="cond-fb-container"></div>
+        <button class="btn btn-outline" style="width:100%;text-align:center" onclick="addCondFeedback()">+ 添加条件反馈</button>
+        <div class="btn-row"><button class="btn btn-outline" onclick="closeFbModal()">取消</button><button class="btn btn-primary" onclick="saveFbModal()">保存</button></div>
       </div>
     </div>
-  </div>
-
-  <!-- 预览弹窗 -->
-  <div class="modal-overlay hidden" id="preview-modal" onclick="if(event.target===this)closePreviewModal()">
-    <div class="preview-modal-box" onclick="event.stopPropagation()">
-      <h3>
-        <span id="preview-modal-title">题目预览</span>
-        <button class="preview-close-btn" onclick="closePreviewModal()">&times;</button>
-      </h3>
-      <div class="preview-canvas-wrapper">
-        <div class="preview-canvas" id="preview-canvas"></div>
-      </div>
-      <div style="margin-top:12px;font-size:12px;color:#94a3b8;text-align:center">
-        <span id="preview-resolution">1334 × 750</span> &nbsp;|&nbsp;
-        <span id="preview-info-text">创建前预览基于后端最终 questionData 本地渲染，不会在莫顿系统创建题目。生成后可点击「📸 真实预览」核对莫顿实际效果。</span>
+    <div class="modal-overlay hidden" id="preview-modal" onclick="if(event.target===this)closePreviewModal()">
+      <div class="preview-modal-box" onclick="event.stopPropagation()">
+        <h3><span id="preview-modal-title">题目预览</span><button class="preview-close-btn" onclick="closePreviewModal()">&times;</button></h3>
+        <div class="preview-canvas-wrapper"><div class="preview-canvas" id="preview-canvas"></div></div>
+        <div style="margin-top:10px;font-size:14px;color:var(--text-dim);text-align:center">分辨率：<span id="preview-resolution">1334*750</span></div>
       </div>
     </div>
-  </div>
-
-  <!-- 真实截图预览弹窗 -->
-  <div class="modal-overlay hidden" id="real-preview-modal" onclick="if(event.target===this)closeRealPreview()">
-    <div class="preview-modal-box" onclick="event.stopPropagation()" style="max-width:800px">
-      <h3>
-        <span id="real-preview-title">📸 真实预览</span>
-        <button class="preview-close-btn" onclick="closeRealPreview()">&times;</button>
-      </h3>
-      <div id="real-preview-loading" style="text-align:center;padding:60px 0">
-        <div style="font-size:36px;animation:pulse 1.5s infinite">📸</div>
-        <p style="color:#94a3b8;margin-top:12px">正在打开莫顿页面截图，首次约需 5~10 秒...</p>
-      </div>
-      <div id="real-preview-content" class="hidden" style="text-align:center">
-        <img id="real-preview-img" style="max-width:100%;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.15)" />
-      </div>
-      <div id="real-preview-error" class="hidden" style="text-align:center;padding:40px 0">
-        <div style="font-size:48px">😞</div>
-        <p id="real-preview-error-msg" style="color:#fca5a5;margin-top:12px">截图失败</p>
-        <p style="color:#64748b;font-size:12px;margin-top:4px">可能是登录状态过期或莫顿页面加载异常</p>
-      </div>
-      <div style="margin-top:12px;font-size:12px;color:#94a3b8;text-align:center">
-        由 Playwright 自动截图 — 100% 还原莫顿实际效果
+    <div class="modal-overlay hidden" id="real-preview-modal" onclick="if(event.target===this)closeRealPreview()">
+      <div class="preview-modal-box" onclick="event.stopPropagation()" style="max-width:700px">
+        <h3><span id="real-preview-title">📸 真实预览</span><button class="preview-close-btn" onclick="closeRealPreview()">&times;</button></h3>
+        <div id="real-preview-loading" style="text-align:center;padding:40px 20px">
+          <div style="width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto"></div>
+          <p style="color:var(--text-dim);margin-top:12px">正在截图...</p>
+        </div>
+        <div id="real-preview-content" class="hidden" style="width:100%;text-align:center">
+          <img id="real-preview-img" style="max-width:100%;border-radius:6px" alt="截图预览">
+        </div>
+        <div id="real-preview-error" class="hidden" style="text-align:center;padding:20px">
+          <p style="color:var(--red)">⚠ <span id="real-preview-error-msg">截图失败</span></p>
+        </div>
+        <div style="margin-top:12px;font-size:14px;color:var(--text-dim);text-align:center">由 Playwright 自动截图 — 100% 还原莫顿实际效果</div>
       </div>
     </div>
   </div>
@@ -1733,7 +1357,7 @@
 
       const width = questionData.autoWidth || 1334;
       const height = questionData.autoHeight || 750;
-      // 只模拟莫顿“中间编辑画布”截图比例：约 1158×804。
+      // 只模拟莫顿"中间编辑画布"截图比例：约 1158×804。
       // 后端 questionData 仍使用 1334×750 业务坐标；绿色内容框业务坐标为 182,130,970,450。
       // 莫顿编辑画布中对应绿色框约为 28,160,1102,408，因此用这个框做仿射映射。
       const editor = { width: 1158, height: 804 };
