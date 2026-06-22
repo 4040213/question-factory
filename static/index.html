@@ -166,9 +166,32 @@
           <div id="auth-status" class="hidden" style="margin-top:8px;"></div>
         </div>
 
+        <!-- 飞书导入 -->
+        <div class="card" id="feishu-card">
+          <h2><span class="icon">🪶</span> 飞书导入</h2>
+          <div style="display:flex;gap:8px;">
+            <input id="feishu-url-input" placeholder="粘贴飞书文档链接…" style="flex:1">
+            <button class="btn btn-primary" id="feishu-convert-btn" onclick="feishuConvert()">转换</button>
+          </div>
+          <div id="feishu-status" class="hidden"></div>
+        </div>
+
         <!-- Import Excel -->
         <div class="card" id="upload-card">
-          <h2><span class="icon">📄</span> 导入 Excel <span class="help-tip">?<div class="help-tip-box">表头格式：<code>题干</code> | <code>文本</code> | <code>选项A</code> | <code>选项B</code> | <code>选项C</code> | <code>选项D</code> | <code>选项E</code> | <code>选项F</code> | <code>选项G</code> | <code>选项H</code> | <code>答案</code> | <code>名称</code> | <code>学科</code> | <code>分辨率</code> | <code>年级</code> | <code>阶段</code> | <code>难度</code> | <code>知识点</code> | <code>题目图片</code> | <code>画布背景</code> | <code>答错反馈</code> | <code>答对反馈</code> | <code>答错图片</code> | <code>答对图片</code> | <code>答错音频</code> | <code>答对音频</code> | <code>最少错次</code> | <code>最多错次</code> | <code>条件反馈文本</code> | <code>条件图片URL</code> | <code>条件音频URL</code></div></span></h2>
+          <h2><span class="icon">📄</span> 导入 Excel <span class="help-tip">?<div class="help-tip-box">统一术语：<code>名称</code>、<code>学科</code>、<code>分辨率</code>、<code>年级</code>、<code>阶段</code>、<code>难度</code>、<code>知识点</code>。<br>选择题字段：<code>题干</code>、<code>文本</code>、<code>选项A</code>~<code>选项H</code>、<code>答案</code>、<code>题目图片</code>、<code>画布背景</code>。<br>填空题字段：<code>题干文本</code> 对应题目级 stem，<code>文本</code> 对应画布文本；空位字段按 <code>空1名称</code>、<code>空1类型</code>、<code>空1答案</code>、<code>空1选项1</code>... 扩展。</div></span></h2>
+          <div class="settings-row cols-2" style="margin-bottom:10px">
+            <div>
+              <label>题型</label>
+              <select id="question-type-select">
+                <option value="CHOICE">选择题</option>
+                <option value="BLANK">填空题</option>
+              </select>
+            </div>
+            <div>
+              <label>填空题空位命名</label>
+              <input id="blank-field-label-input" value="空1" placeholder="如：空1">
+            </div>
+          </div>
           <div class="file-input-wrapper"><button class="btn btn-primary" style="width:100%">选择 Excel 文件（可多选）</button><input type="file" id="file-input" accept=".xlsx,.xls" multiple onchange="handleFileUpload(event)"></div>
           <div id="upload-status" class="hidden"></div>
         </div>
@@ -550,6 +573,72 @@
     }
 
     // ========== 文件上传 ==========
+    function getSelectedQuestionType() {
+      const el = document.getElementById('question-type-select');
+      return el ? el.value : 'CHOICE';
+    }
+
+    // ========== 飞书导入 ==========
+    async function feishuConvert() {
+      const url = document.getElementById('feishu-url-input').value.trim();
+      if (!url) { alert('请粘贴飞书文档链接'); return; }
+
+      const btn = document.getElementById('feishu-convert-btn');
+      const status = document.getElementById('feishu-status');
+      btn.disabled = true;
+      btn.textContent = '转换中…';
+      status.className = 'status status-info';
+      status.textContent = '⏳ 正在从飞书拉取文档内容…';
+      status.classList.remove('hidden');
+
+      try {
+        const resp = await fetch('/api/feishu/convert', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url }),
+        });
+        const data = await resp.json();
+
+        if (!data.success) {
+          status.className = 'status status-error';
+          status.textContent = '❌ ' + (data.error || '转换失败');
+          return;
+        }
+
+        status.className = 'status status-success';
+        const s = data.summary;
+        status.textContent = `✅ 转换完成！共 ${s.total} 题（选择题 ${s.choice_count}，填空题 ${s.fill_count}）`;
+
+        // 自动触发生成的 Excel 解析：模拟文件上传
+        for (const filePath of data.files) {
+          const filename = filePath.split('\\').pop().split('/').pop();
+          await loadGeneratedExcel(filePath, filename);
+        }
+      } catch (e) {
+        status.className = 'status status-error';
+        status.textContent = '❌ 请求失败: ' + e.message;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '转换';
+      }
+    }
+
+    async function loadGeneratedExcel(filePath, filename) {
+      // 后端读取生成的文件并返回给前端解析
+      try {
+        const resp = await fetch(`/api/feishu/download?path=${encodeURIComponent(filePath)}`);
+        if (!resp.ok) throw new Error(`下载失败 (${resp.status})`);
+        const blob = await resp.blob();
+        const file = new File([blob], filename, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        document.getElementById('file-input').files = dt.files;
+        await handleFileUpload({ target: { files: [file] } });
+      } catch (e) {
+        console.error('加载生成Excel失败:', e);
+      }
+    }
+
     async function handleFileUpload(event) {
       const files = Array.from(event.target.files);
       if (files.length === 0) return;
@@ -564,7 +653,8 @@
         formData.append('file', file);
 
         try {
-          const resp = await fetch('/api/question/parse-excel', {
+          const questionType = getSelectedQuestionType();
+          const resp = await fetch(`/api/question/parse-excel?question_type=${encodeURIComponent(questionType)}`, {
             method: 'POST',
             body: formData,
           });
@@ -698,7 +788,7 @@
       info.innerHTML = `<span style="color:#94a3b8">${escapeHtml(fileName)}</span> &nbsp;共 <b>${questions.length}</b> 道题 &nbsp;|&nbsp; <span style="color:#86efac">已选 <b>${selectedCount}</b></span> &nbsp;|&nbsp; <span style="color:#86efac">✨ 智能布局</span> &nbsp;|&nbsp; <span style="color:#a5b4fc">点击「编辑反馈」配置通用反馈+条件反馈</span>${summaryHtml}`;
 
       tbody.innerHTML = questions.map((q, i) => {
-        const optStr = q.options.map(o => `${o.label}. ${o.content}`).join(' ');
+        const optStr = q.options ? q.options.map(o => `${o.label}. ${o.content}`).join(' ') : '';
         const hasText = q.wrongFeedback || q.correctFeedback;
         const hasImg = q.wrongFeedbackImg || q.correctFeedbackImg;
         const hasAudio = q.wrongFeedbackAudio || q.correctFeedbackAudio;
@@ -726,7 +816,8 @@
         const hasResult = r && r.success;
         const previewLabel = hasResult ? '📸预览' : '👁预览';
         const previewColor = hasResult ? '#0ea5e9' : '#22c55e';
-        const previewAction = hasResult ? `openRealPreview(${i})` : `openPreviewModal(${i})`;
+        const isBlank = q.questionType === 'BLANK' || q.questionType === 'COMPLETION';
+        const previewAction = hasResult ? `openRealPreview(${i})` : (isBlank ? `openBlankPreviewModal(${i})` : `openPreviewModal(${i})`);
         const previewBtn = `<button class="btn" style="padding:4px 10px;font-size:12px;background:${previewColor};color:#fff;border:none;border-radius:4px;cursor:pointer;margin-right:4px"
                onclick="${previewAction}">${previewLabel}</button>`;
 
@@ -735,8 +826,8 @@
           <td>${i+1}</td>
           <td>${escapeHtml(q.stem).slice(0, 40)}</td>
           <td style="color:#f59e0b">${escapeHtml(q.name || '(待生成)')}</td>
-          <td style="font-size:11px">${escapeHtml(optStr).slice(0, 60)}</td>
-          <td>${q.answer}</td>
+          <td style="font-size:11px">${isBlank ? `<span style="color:#a78bfa">填空题</span>` : escapeHtml(optStr).slice(0, 60)}</td>
+          <td>${isBlank ? escapeHtml((q.blanks || []).map(b => b.answer).filter(Boolean).join('；')) : escapeHtml(q.answer || '')}</td>
           <td style="font-size:11px">${SUBJECT_NAMES[q.subjectId] || (q.subjectId ? q.subjectId : '未设置')}</td>
           <td style="font-size:11px">${GRADE_NAMES[String(q.grade)] || (q.grade ? q.grade : '未设置')}</td>
           <td style="font-size:11px">${STAGE_NAMES[String(q.stage)] || (q.stage ? q.stage : '未设置')}</td>
@@ -1525,6 +1616,42 @@
         canvas.appendChild(bgTip);
       }
       renderFeedbackPreviewBadge(canvas, questionData);
+    }
+
+    function renderBlankPreview(question) {
+      const canvas = document.getElementById('preview-canvas');
+      canvas.innerHTML = '';
+      canvas.style.background = '#fffaf7';
+      const titleEl = document.createElement('div');
+      titleEl.style.cssText = 'position:absolute;left:32px;top:34px;font-size:24px;color:#8d6e63;font-weight:700;font-family:"Microsoft YaHei",sans-serif';
+      titleEl.textContent = question.stem || '填空题';
+      canvas.appendChild(titleEl);
+
+      const stem = document.createElement('div');
+      stem.style.cssText = 'position:absolute;left:32px;top:96px;width:900px;font-size:22px;color:#5d4037;line-height:1.6;font-family:"Microsoft YaHei",sans-serif';
+      stem.textContent = question.contentMarkup || question.stem || '';
+      canvas.appendChild(stem);
+
+      const blanks = question.blanks || [];
+      const list = document.createElement('div');
+      list.style.cssText = 'position:absolute;left:32px;top:220px;right:32px;display:flex;flex-direction:column;gap:12px';
+      blanks.forEach((b, idx) => {
+        const row = document.createElement('div');
+        row.style.cssText = 'background:#fff;border:1px solid #e6d8c8;border-radius:10px;padding:12px 14px;color:#5d4037;font-size:15px;line-height:1.55';
+        row.innerHTML = `<b style="color:#7c5cfc">空${idx+1}</b> · 变量 <code>${escapeHtml(b.varName || '')}</code> · 类型 <code>${escapeHtml(b.answerType || 'content')}</code><br>答案：<span style="color:#16a34a">${escapeHtml(b.answer || '')}</span>${b.aliases && b.aliases.length ? ` &nbsp;|&nbsp; 别名：${escapeHtml(b.aliases.join('；'))}` : ''}${b.hint ? `<br>提示：${escapeHtml(b.hint)}` : ''}`;
+        list.appendChild(row);
+      });
+      canvas.appendChild(list);
+    }
+
+    async function openBlankPreviewModal(index) {
+      const questions = getCurrentQuestions();
+      if (!questions || index < 0 || index >= questions.length) return;
+      const q = questions[index];
+      document.getElementById('preview-modal-title').textContent = `填空题预览：${q.name || q.stem.slice(0, 20)}`;
+      document.getElementById('preview-resolution').textContent = `${q.resolution || '1334*750'}`;
+      document.getElementById('preview-modal').classList.remove('hidden');
+      renderBlankPreview(q);
     }
 
     async function openPreviewModal(index) {

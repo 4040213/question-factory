@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
 from pathlib import Path
 
-from .routers import auth, question, metadata, screenshot
+from .routers import auth, question, metadata, screenshot, feishu
 
 
 def create_app() -> FastAPI:
@@ -23,6 +23,7 @@ def create_app() -> FastAPI:
     app.include_router(question.router)
     app.include_router(metadata.router)
     app.include_router(screenshot.router)
+    app.include_router(feishu.router)
 
     static_dir = Path(__file__).parent.parent / "static"
     index_html_path = static_dir / "index.html"
