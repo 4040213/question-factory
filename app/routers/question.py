@@ -16,6 +16,10 @@ from config import SUBJECT_MAP, GRADE_MAP, STAGE_MAP, DIFFICULTY_MAP
 
 router = APIRouter(prefix="/api/question", tags=["试题"])
 
+QUESTION_TYPE_CHOICE = "CHOICE"
+QUESTION_TYPE_BLANK = "BLANK"
+QUESTION_TYPE_COMPLETION = "COMPLETION"
+
 QUESTION_ROOT = "/merton-backend/question"
 PREVIEW_NAME_PREFIX = "【预览-可删除】"
 
@@ -63,7 +67,7 @@ class QuestionItem(BaseModel):
 
 
 class BatchRequest(BaseModel):
-    questions: List[QuestionItem]
+    questions: List[Dict[str, Any]]
     subjectId: int = 0
     cookie: str
     token: str
@@ -87,7 +91,7 @@ class BatchRequest(BaseModel):
 
 
 class PreviewCreateRequest(BaseModel):
-    question: QuestionItem
+    question: Dict[str, Any]
     subjectId: int = 0
     cookie: str
     token: str
@@ -110,7 +114,7 @@ class PreviewCreateRequest(BaseModel):
 
 class PreviewPayloadRequest(BaseModel):
     """创建前本地预览请求：只构建最终 questionData，不调用莫顿 insert/update。"""
-    question: QuestionItem
+    question: Dict[str, Any]
     subjectId: int = 0
     defaultName: str = "新建选择题"
     defaultResolution: str = "1334*750"
@@ -129,6 +133,79 @@ class PreviewPayloadRequest(BaseModel):
     defaultConditionFeedback: Optional[ConditionFeedback] = None
 
 
+class BlankField(BaseModel):
+    varName: str
+    blankType: str = "CONTENT"
+    answerType: str = "CONTENT"
+    inputStyle: str = "TEXT"
+    answer: str = ""
+    aliases: List[str] = []
+    keyboardStyle: str = "HORIZONTAL_DOUBLE_LINE"
+    showNumber: bool = True
+    showBox: bool = False
+    options: List[str] = []
+
+
+class BlankQuestionItem(BaseModel):
+    stem: str
+    contexts: List[str] = []
+    name: str = ""
+    subjectId: int = 0
+    resolution: str = "1334*750"
+    grade: int = 0
+    stage: int = 0
+    difficulty: int = 0
+    knowledge: str = ""
+    questionType: str = QUESTION_TYPE_COMPLETION
+    contentMarkup: str = ""
+    stemAudio: str = ""
+    blanks: List[BlankField] = []
+    questionImages: List[dict] = []
+    backgroundUrl: str = ""
+    wrongFeedback: str = ""
+    correctFeedback: str = ""
+    wrongFeedbackImg: str = ""
+    correctFeedbackImg: str = ""
+    wrongFeedbackAudio: str = ""
+    correctFeedbackAudio: str = ""
+    conditionFeedbacks: List[ConditionFeedback] = []
+
+
+class BlankBatchRequest(BaseModel):
+    questions: List[Dict[str, Any]]
+    subjectId: int = 0
+    cookie: str = ""
+    token: str = ""
+    defaultName: str = "新建填空题"
+    defaultResolution: str = "1334*750"
+    defaultGrade: int = 0
+    defaultStage: int = 0
+    defaultDifficulty: int = 0
+    defaultKnowledge: str = ""
+    defaultWrongFeedback: str = ""
+    defaultCorrectFeedback: str = ""
+    defaultWrongImg: str = ""
+    defaultCorrectImg: str = ""
+    defaultWrongAudio: str = ""
+    defaultCorrectAudio: str = ""
+
+
+def _normalize_blank_value(value: str, mapping: Dict[str, str], default: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return default
+    return mapping.get(text, text).upper()
+
+
+def _to_model(item: Any):
+    if isinstance(item, dict):
+        if item.get("questionType") in (QUESTION_TYPE_COMPLETION, QUESTION_TYPE_BLANK):
+            item = {**item, "questionType": QUESTION_TYPE_COMPLETION}
+            return BlankQuestionItem(**item)
+        return QuestionItem(**item)
+    return item
+
+
 def _apply_defaults(item: QuestionItem, body) -> None:
     """应用全局默认值，确保正式生成和真实预览使用同一套字段回填规则。"""
     if not item.name or item.name.strip() == "":
@@ -145,21 +222,27 @@ def _apply_defaults(item: QuestionItem, body) -> None:
         item.knowledge = body.defaultKnowledge
     if item.subjectId == 0 and body.subjectId != 0:
         item.subjectId = body.subjectId
-    if (not item.wrongFeedback or item.wrongFeedback.strip() == "") and body.defaultWrongFeedback:
+
+    is_completion = getattr(item, "questionType", QUESTION_TYPE_CHOICE) == QUESTION_TYPE_COMPLETION
+
+    if (not getattr(item, "wrongFeedback", "") or getattr(item, "wrongFeedback", "").strip() == "") and body.defaultWrongFeedback:
         item.wrongFeedback = body.defaultWrongFeedback
-    if (not item.correctFeedback or item.correctFeedback.strip() == "") and body.defaultCorrectFeedback:
+    if (not getattr(item, "correctFeedback", "") or getattr(item, "correctFeedback", "").strip() == "") and body.defaultCorrectFeedback:
         item.correctFeedback = body.defaultCorrectFeedback
-    if (not item.wrongFeedbackImg or item.wrongFeedbackImg.strip() == "") and body.defaultWrongImg:
+    if (not getattr(item, "wrongFeedbackImg", "") or getattr(item, "wrongFeedbackImg", "").strip() == "") and body.defaultWrongImg:
         item.wrongFeedbackImg = body.defaultWrongImg
-    if (not item.correctFeedbackImg or item.correctFeedbackImg.strip() == "") and body.defaultCorrectImg:
+    if (not getattr(item, "correctFeedbackImg", "") or getattr(item, "correctFeedbackImg", "").strip() == "") and body.defaultCorrectImg:
         item.correctFeedbackImg = body.defaultCorrectImg
-    if (not item.wrongFeedbackAudio or item.wrongFeedbackAudio.strip() == "") and body.defaultWrongAudio:
+    if (not getattr(item, "wrongFeedbackAudio", "") or getattr(item, "wrongFeedbackAudio", "").strip() == "") and body.defaultWrongAudio:
         item.wrongFeedbackAudio = body.defaultWrongAudio
-    if (not item.correctFeedbackAudio or item.correctFeedbackAudio.strip() == "") and body.defaultCorrectAudio:
+    if (not getattr(item, "correctFeedbackAudio", "") or getattr(item, "correctFeedbackAudio", "").strip() == "") and body.defaultCorrectAudio:
         item.correctFeedbackAudio = body.defaultCorrectAudio
 
+    if is_completion:
+        return
+
     # 题目图片全局默认（分号分隔，仅当 Excel 未提供时生效）
-    if (not item.questionImages or len(item.questionImages) == 0) and body.defaultQuestionImages:
+    if (not getattr(item, "questionImages", []) or len(getattr(item, "questionImages", [])) == 0) and body.defaultQuestionImages:
         images = []
         for url in body.defaultQuestionImages.split(";"):
             url = url.strip()
@@ -169,11 +252,11 @@ def _apply_defaults(item: QuestionItem, body) -> None:
             item.questionImages = images
 
     # 画布背景全局默认
-    if (not item.backgroundUrl or item.backgroundUrl.strip() == "") and body.defaultBackgroundUrl:
+    if (not getattr(item, "backgroundUrl", "") or getattr(item, "backgroundUrl", "").strip() == "") and body.defaultBackgroundUrl:
         item.backgroundUrl = body.defaultBackgroundUrl
 
     # 条件反馈全局默认（仅当逐题未设置时生效）
-    if (not item.conditionFeedbacks or len(item.conditionFeedbacks) == 0) and body.defaultConditionFeedback:
+    if (not getattr(item, "conditionFeedbacks", []) or len(getattr(item, "conditionFeedbacks", [])) == 0) and body.defaultConditionFeedback:
         cf = body.defaultConditionFeedback
         # 只有填写了反馈文本时才添加
         if cf.content and cf.content.strip():
@@ -701,8 +784,8 @@ async def _update_question(client, question_data: Dict[str, Any], question_id, i
         return f"更新异常: {e}"
 
 
-def _build_insert_payload(item: QuestionItem, subject_id: int) -> Dict[str, Any]:
-    """构建 insert 接口的完整 payload。"""
+def _build_choice_payload(item: QuestionItem, subject_id: int) -> Dict[str, Any]:
+    """构建选择题 insert 接口的完整 payload。"""
     FONT_SIZE = 32
     RGB = "#9f765b"
 
@@ -792,7 +875,7 @@ def _build_insert_payload(item: QuestionItem, subject_id: int) -> Dict[str, Any]
             "newDisplayBox": True,
             "options": options,
         },
-        "questionType": "CHOICE",
+        "questionType": QUESTION_TYPE_CHOICE,
         "autoWidth": CANVAS_WIDTH,
         "autoHeight": CANVAS_HEIGHT,
         "name": item.name,
@@ -840,13 +923,119 @@ def _build_insert_payload(item: QuestionItem, subject_id: int) -> Dict[str, Any]
     return {"questionData": question_data}, question_data
 
 
+def _build_completion_payload(item: BlankQuestionItem, subject_id: int) -> Dict[str, Any]:
+    """构建填空题 COMPLETION 接口的完整 payload。"""
+    FONT_SIZE = 32
+    RGB = "#9f765b"
+
+    res = item.resolution or "1334*750"
+    if "*" in res:
+        parts = res.replace("高清", "").strip().split("*")
+        CANVAS_WIDTH = int(parts[0]) if parts[0].isdigit() else 1334
+        CANVAS_HEIGHT = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 750
+    else:
+        CANVAS_WIDTH, CANVAS_HEIGHT = 1334, 750
+
+    def _blank_coord(index: int) -> Dict[str, int]:
+        return {"x": 678 + index * 168, "y": 171}
+
+    stem_display = item.stem.replace("______", "")
+    context_source = item.contexts[0] if item.contexts else item.stem
+    context_display = context_source.replace("______", "")
+    contexts = [{
+        "content": context_display,
+        "size": 40,
+        "rgb": RGB,
+        "coordinate": {"x": 479, "y": 178},
+        "displayBoxWeight": 360,
+        "displayBoxHeight": 56,
+        "isDrag": True,
+        "uuid": str(uuid_mod.uuid4()),
+    }]
+
+    blanks: List[Dict[str, Any]] = []
+    for idx, blank in enumerate(item.blanks or []):
+        answers = [blank.answer] if blank.answer else []
+        if blank.aliases:
+            answers.extend([a for a in blank.aliases if a])
+        options = []
+        for opt_idx, opt in enumerate(blank.options or [], start=1):
+            options.append({
+                "uuid": str(uuid_mod.uuid4()),
+                "content": opt,
+                "optionIndex": str(opt_idx),
+                "answer": opt in answers,
+            })
+        blanks.append({
+            "uuid": str(uuid_mod.uuid4()),
+            "blankType": "PICTURE",
+            "answerType": _normalize_blank_value(blank.answerType, {"内容": "CONTENT", "选项": "OPTION"}, "CONTENT"),
+            "blankAnswer": answers,
+            "coordinate": _blank_coord(idx),
+            "displayFormat": "OPTIONNUMBER",
+            "fontSize": FONT_SIZE,
+            "frontType": "blank",
+            "height": 63,
+            "rgb": RGB,
+            "styleType": 1,
+            "top": False,
+            "weight": 146,
+            "keyBoardType": _normalize_blank_value(blank.keyboardStyle, {"横向双线键盘": "HORIZONTAL_DOUBLE_LINE"}, "HORIZONTAL_DOUBLE_LINE"),
+            "options": options,
+            "questionType": QUESTION_TYPE_COMPLETION,
+            "action": "edit",
+        })
+
+    question_item = {
+        "displayNumber": any(blank.showNumber for blank in item.blanks),
+        "displayBox": True,
+        "newDisplayBox": True,
+        "inputType": 1,
+        "keyBoardType": blanks[0]["keyBoardType"] if blanks else "HORIZONTAL_DOUBLE_LINE",
+        "completionBlankList": blanks,
+        "options": [],
+    }
+
+    display_stem = stem_display
+    question_data: Dict[str, Any] = {
+        "answerFeedbackType": "ALL",
+        "skinVersion": 1,
+        "resolution": res.replace("高清", "").strip(),
+        "questionItem": question_item,
+        "questionType": QUESTION_TYPE_COMPLETION,
+        "autoWidth": CANVAS_WIDTH,
+        "autoHeight": CANVAS_HEIGHT,
+        "name": item.name,
+        "stem": {"content": display_stem},
+        "subjectId": item.subjectId or subject_id,
+        "contexts": contexts,
+        "questionFeedbacks": [],
+        "auxiliaryTips": {"tips": [], "autoTip": {}, "parses": [], "experiments": []},
+    }
+
+    if item.knowledge:
+        question_data["knowledge"] = [k.strip() for k in item.knowledge.split(";") if k.strip()]
+    if item.difficulty:
+        question_data["difficulty"] = item.difficulty
+    if item.grade:
+        question_data["grade"] = item.grade
+    if item.stage:
+        question_data["stage"] = item.stage
+
+    print(f"[COMPLETION] name={item.name} subjectId={question_data['subjectId']} resolution={question_data['resolution']} blanks={len(blanks)}")
+    return {"questionData": question_data}, question_data
+
+
 @router.post("/preview-payload")
 async def preview_payload(body: PreviewPayloadRequest) -> Dict[str, Any]:
     """构建创建前预览用的最终 questionData；不会在莫顿系统创建题目。"""
     try:
-        item = body.question
+        item = _to_model(body.question)
         _apply_defaults(item, body)
-        _, question_data = _build_insert_payload(item, body.subjectId)
+        if getattr(item, 'questionType', QUESTION_TYPE_CHOICE) == QUESTION_TYPE_COMPLETION:
+            _, question_data = _build_completion_payload(item, body.subjectId)
+        else:
+            _, question_data = _build_choice_payload(item, body.subjectId)
         _merge_update_fields(question_data, item)
         return {
             "success": True,
@@ -862,14 +1051,17 @@ async def preview_create(body: PreviewCreateRequest) -> Dict[str, Any]:
     """创建一条莫顿预览题，用真实 widget 截图还原解析后的题目效果。"""
     client = MortonClient(cookie=body.cookie, token=body.token)
     try:
-        item = body.question
+        item = _to_model(body.question)
         _apply_defaults(item, body)
 
         original_name = item.name or body.defaultName or "新建选择题"
         if not original_name.startswith(PREVIEW_NAME_PREFIX):
             item.name = f"{PREVIEW_NAME_PREFIX}{original_name}"
 
-        payload, question_data = _build_insert_payload(item, body.subjectId)
+        if getattr(item, 'questionType', QUESTION_TYPE_CHOICE) == QUESTION_TYPE_COMPLETION:
+            payload, question_data = _build_completion_payload(item, body.subjectId)
+        else:
+            payload, question_data = _build_choice_payload(item, body.subjectId)
         # DEBUG: 打印发送给莫顿的选项坐标
         qd = payload.get("questionData", {})
         qi = qd.get("questionItem", {})
@@ -910,13 +1102,17 @@ async def batch_create(body: BatchRequest) -> Dict[str, Any]:
     results: List[Dict[str, Any]] = []
 
     # 应用默认值，确保正式生成和真实预览一致
+    body.questions = [_to_model(q) for q in body.questions]
     for q in body.questions:
         _apply_defaults(q, body)
 
     try:
         for idx, item in enumerate(body.questions):
             try:
-                payload, question_data = _build_insert_payload(item, body.subjectId)
+                if getattr(item, 'questionType', QUESTION_TYPE_CHOICE) == QUESTION_TYPE_COMPLETION:
+                    payload, question_data = _build_completion_payload(item, body.subjectId)
+                else:
+                    payload, question_data = _build_choice_payload(item, body.subjectId)
                 result = await client.post(f"{QUESTION_ROOT}/insert", json=payload)
 
                 if result.get("code") != 200:
@@ -979,6 +1175,7 @@ async def batch_create_stream(body: BatchRequest):
         yield f"data: {json.dumps({'total': total, 'progress': f'0/{total}', 'percent': 0}, ensure_ascii=False)}\n\n"
 
         # 应用默认值（与 batch_create / 预览创建相同逻辑）
+        body.questions = [_to_model(q) for q in body.questions]
         for q in body.questions:
             _apply_defaults(q, body)
 
@@ -988,7 +1185,10 @@ async def batch_create_stream(body: BatchRequest):
         try:
             for idx, item in enumerate(body.questions):
                 try:
-                    payload, question_data = _build_insert_payload(item, body.subjectId)
+                    if getattr(item, 'questionType', QUESTION_TYPE_CHOICE) == QUESTION_TYPE_COMPLETION:
+                        payload, question_data = _build_completion_payload(item, body.subjectId)
+                    else:
+                        payload, question_data = _build_choice_payload(item, body.subjectId)
                     # DEBUG: 打印选项坐标
                     qd = payload.get("questionData", {})
                     qi = qd.get("questionItem", {})
@@ -1051,10 +1251,173 @@ async def batch_create_stream(body: BatchRequest):
     )
 
 
+async def parse_blank_excel(file: UploadFile) -> Dict[str, Any]:
+    """解析填空题 Excel（精简结构版）。支持空1/空2/... 多空模板。"""
+    try:
+        content = await file.read()
+        wb = load_workbook(io.BytesIO(content), read_only=True)
+        ws = wb.active
+        header = [str(c or "").strip() for c in next(ws.iter_rows(min_row=1, max_row=1, values_only=True), [])]
+        rows = list(ws.iter_rows(min_row=2, values_only=True))
+        questions: List[Dict[str, Any]] = []
+
+        def get(row, idx, default=""):
+            if idx < len(row) and row[idx] is not None:
+                return row[idx]
+            return default
+
+        def find_col(*names):
+            for name in names:
+                if name in header:
+                    return header.index(name)
+            return -1
+
+        idx_question_type = find_col("题型")
+        idx_name = find_col("名称")
+        idx_subject = find_col("学科")
+        idx_resolution = find_col("分辨率")
+        idx_grade = find_col("年级")
+        idx_stage = find_col("阶段")
+        idx_difficulty = find_col("难度")
+        idx_knowledge = find_col("知识点")
+        idx_stem_text = find_col("题干文本")
+        idx_context_text = find_col("文本")
+        idx_stem_audio = find_col("题干音频")
+
+        # 多空按空编号扫描
+        blank_groups = []
+        for n in range(1, 10):
+            prefix = f"空{n}"
+            cols = {
+                "name": find_col(f"{prefix}名称"),
+                "type": find_col(f"{prefix}类型"),
+                "answer_type": find_col(f"{prefix}答案类型"),
+                "input_style": find_col(f"{prefix}输入框样式"),
+                "top": find_col(f"{prefix}是否置顶"),
+                "x": find_col(f"{prefix}坐标X"),
+                "y": find_col(f"{prefix}坐标Y"),
+                "width": find_col(f"{prefix}宽度"),
+                "height": find_col(f"{prefix}高度"),
+                "answer": find_col(f"{prefix}答案"),
+                "aliases": find_col(f"{prefix}答案别名"),
+                "keyboard": find_col(f"{prefix}键盘样式"),
+                "show_number": find_col(f"{prefix}显示序号"),
+                "show_box": find_col(f"{prefix}显示选项底框"),
+                "opt1": find_col(f"{prefix}选项1"),
+                "opt2": find_col(f"{prefix}选项2"),
+                "opt3": find_col(f"{prefix}选项3"),
+                "opt4": find_col(f"{prefix}选项4"),
+            }
+            if cols["name"] >= 0 or cols["answer"] >= 0:
+                blank_groups.append((n, cols))
+
+        for row in rows:
+            qtype = str(get(row, idx_question_type, "COMPLETION")).strip().upper() if idx_question_type >= 0 else "COMPLETION"
+            if qtype and qtype not in ("COMPLETION", "BLANK"):
+                continue
+            name = str(get(row, idx_name, "")).strip()
+            subject_raw = str(get(row, idx_subject, "")).strip()
+            resolution = str(get(row, idx_resolution, "1334*750")).strip()
+            grade_raw = str(get(row, idx_grade, "")).strip().replace("－", "-").replace("—", "-")
+            stage_raw = str(get(row, idx_stage, "")).strip()
+            difficulty_raw = str(get(row, idx_difficulty, "0")).strip() or "0"
+            knowledge = str(get(row, idx_knowledge, "")).strip()
+            stem_text = str(get(row, idx_stem_text, "")).strip()
+            context_text = str(get(row, idx_context_text, stem_text)).strip()
+            stem_audio = str(get(row, idx_stem_audio, "")).strip()
+
+            if subject_raw.isdigit():
+                subject_id = int(subject_raw)
+            else:
+                subject_id = SUBJECT_MAP.get(subject_raw, 0)
+            if grade_raw.isdigit():
+                grade_val = int(grade_raw)
+            else:
+                grade_val = GRADE_MAP.get(grade_raw, 0)
+            if stage_raw.isdigit():
+                stage_val = int(stage_raw)
+            else:
+                stage_val = STAGE_MAP.get(stage_raw, 0)
+            if difficulty_raw.isdigit():
+                difficulty = int(difficulty_raw)
+            else:
+                difficulty = DIFFICULTY_MAP.get(difficulty_raw, 0)
+            difficulty = max(0, min(5, difficulty))
+
+            blanks = []
+            content_markup = stem_text
+            for n, cols in blank_groups:
+                blank_name = str(get(row, cols["name"], f"空{n}")).strip()
+                blank_type = _normalize_blank_value(str(get(row, cols["type"], "内容型")), {"内容型": "CONTENT", "选项型": "OPTION"}, "CONTENT")
+                answer_type = _normalize_blank_value(str(get(row, cols["answer_type"], "内容")), {"内容": "CONTENT", "选项": "OPTION"}, "CONTENT")
+                input_style = _normalize_blank_value(str(get(row, cols["input_style"], "文本输入框")), {"文本输入框": "TEXT", "选项输入框": "OPTION"}, "TEXT")
+                top = str(get(row, cols["top"], "0")).strip().lower() in ("1", "true", "yes")
+                x = int(get(row, cols["x"], 0) or 0)
+                y = int(get(row, cols["y"], 0) or 0)
+                width = int(get(row, cols["width"], 0) or 0)
+                height = int(get(row, cols["height"], 0) or 0)
+                answer = str(get(row, cols["answer"], "")).strip()
+                aliases = [a.strip() for a in str(get(row, cols["aliases"], "")).split(";") if a.strip()]
+                keyboard = _normalize_blank_value(str(get(row, cols["keyboard"], "横向双线键盘")), {"横向双线键盘": "HORIZONTAL_DOUBLE_LINE"}, "HORIZONTAL_DOUBLE_LINE")
+                show_number = str(get(row, cols["show_number"], "是")).strip().lower() not in ("0", "false", "no", "否")
+                show_box = str(get(row, cols["show_box"], "否")).strip().lower() in ("1", "true", "yes", "是")
+                options = []
+                for ci in ("opt1", "opt2", "opt3", "opt4"):
+                    v = str(get(row, cols[ci], "")).strip()
+                    if v:
+                        options.append(v)
+                if not answer and not options:
+                    continue
+                blanks.append({
+                    "varName": blank_name or f"空{n}",
+                    "blankType": blank_type,
+                    "answerType": answer_type,
+                    "inputStyle": input_style,
+                    "top": top,
+                    "x": x,
+                    "y": y,
+                    "width": width,
+                    "height": height,
+                    "answer": answer,
+                    "aliases": aliases,
+                    "keyboardStyle": keyboard,
+                    "showNumber": show_number,
+                    "showBox": show_box,
+                    "options": options,
+                })
+                if blank_name and "______" in content_markup and len(blanks) == 1:
+                    content_markup = content_markup.replace("______", f"{{{{{blank_name}}}}}", 1)
+
+            if not stem_text or not blanks:
+                continue
+
+            questions.append({
+                "stem": stem_text,
+                "name": name,
+                "subjectId": subject_id,
+                "resolution": resolution,
+                "grade": grade_val,
+                "stage": stage_val,
+                "difficulty": difficulty,
+                "knowledge": knowledge,
+                "questionType": QUESTION_TYPE_COMPLETION,
+                "contentMarkup": content_markup,
+                "contexts": [context_text] if context_text else [],
+                "stemAudio": stem_audio,
+                "blanks": blanks,
+            })
+        wb.close()
+        return {"success": True, "questions": questions, "total": len(questions)}
+    except Exception as e:
+        return {"success": False, "error": f"填空题解析失败: {e}"}
+
+
 @router.post("/parse-excel")
-async def parse_excel(file: UploadFile = File(...)) -> Dict[str, Any]:
+async def parse_excel(file: UploadFile = File(...), question_type: str = "CHOICE") -> Dict[str, Any]:
     """解析上传的 Excel 文件，返回解析后的题目数据。"""
     try:
+        if question_type.upper() == QUESTION_TYPE_BLANK:
+            return await parse_blank_excel(file)
         content = await file.read()
         wb = load_workbook(io.BytesIO(content), read_only=True)
         ws = wb.active

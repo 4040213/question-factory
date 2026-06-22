@@ -10,7 +10,7 @@ from app.__init__ import create_app
 from app.routers.question import (
     _measure_paragraph,
     _calculate_smart_layout,
-    _build_insert_payload,
+    _build_choice_payload as _build_insert_payload,
     _apply_defaults,
     QuestionItem,
     ChoiceOption,
@@ -276,7 +276,7 @@ class TestApplyDefaults:
             subjectId=0,
         )
         body = BatchRequest(
-            questions=[item], cookie="c", token="t", subjectId=4,
+            questions=[item.model_dump()], cookie="c", token="t", subjectId=4,
             defaultName="默认题名", defaultGrade=3, defaultStage=2, defaultDifficulty=1,
             defaultWrongFeedback="再想想", defaultCorrectFeedback="答对了",
         )
@@ -302,7 +302,7 @@ class TestApplyDefaults:
             wrongFeedback="Excel反馈",
         )
         body = BatchRequest(
-            questions=[item], cookie="c", token="t", subjectId=4,
+            questions=[item.model_dump()], cookie="c", token="t", subjectId=4,
             defaultName="默认题名", defaultGrade=3, defaultWrongFeedback="默认反馈",
         )
 
