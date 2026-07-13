@@ -2,6 +2,7 @@
 
 import re
 import os
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -16,8 +17,21 @@ router = APIRouter(prefix="/api/feishu", tags=["飞书导入"])
 APP_ID = os.getenv("FEISHU_APP_ID", "")
 APP_SECRET = os.getenv("FEISHU_APP_SECRET", "")
 
+# ★ 环境变量未设置时，从配置文件读取
+if not APP_ID or not APP_SECRET:
+    _cred_file = os.path.join(os.path.dirname(__file__), "..", "..", "config", "feishu_credentials.json")
+    try:
+        with open(_cred_file, "r", encoding="utf-8") as f:
+            _creds = json.load(f)
+            APP_ID = _creds.get("feishu_app_id", "")
+            APP_SECRET = _creds.get("feishu_app_secret", "")
+    except Exception:
+        pass
+
 if not APP_ID or not APP_SECRET:
     print("[feishu] ⚠ 未配置 FEISHU_APP_ID / FEISHU_APP_SECRET 环境变量")
+else:
+    print(f"[feishu] ✓ 已加载飞书凭证 APP_ID={APP_ID[:8]}***")
 
 # ★ 模板路径：通过环境变量 FEISHU_WORKFLOW_DIR 配置，默认保留现有路径
 _WORKFLOW_DIR = os.getenv("FEISHU_WORKFLOW_DIR", r"D:\A工作\题目生成工作流")
@@ -45,14 +59,22 @@ class FeishuConvertRequest(BaseModel):
 
 def _get_client() -> Tuple[httpx.Client, str]:
     """获取 httpx 客户端和 tenant_access_token。"""
+    print(f"[feishu] 认证中... APP_ID={APP_ID[:8]}***")
     client = httpx.Client(timeout=30)
-    resp = client.post(
-        f"{FEISHU_API}/auth/v3/tenant_access_token/internal",
-        json={"app_id": APP_ID, "app_secret": APP_SECRET},
-    ).json()
-    if resp.get("code") != 0:
-        raise Exception(f"飞书认证失败: {resp}")
-    return client, resp["tenant_access_token"]
+    try:
+        resp = client.post(
+            f"{FEISHU_API}/auth/v3/tenant_access_token/internal",
+            json={"app_id": APP_ID, "app_secret": APP_SECRET},
+        )
+        print(f"[feishu] 认证响应状态: {resp.status_code}")
+        data = resp.json()
+        print(f"[feishu] 认证响应: {data}")
+        if data.get("code") != 0:
+            raise Exception(f"飞书认证失败: {data}")
+        return client, data["tenant_access_token"]
+    except Exception as e:
+        client.close()
+        raise
 
 
 def _resolve_doc_id(client: httpx.Client, token: str, wiki_url: str) -> str:
@@ -193,6 +215,15 @@ def _assemble_questions(tables: List[List[Dict]]) -> List[Dict]:
 #  题目分类（改进版）
 # ============================================================
 
+def _clean_answer_line(text: str) -> str:
+    """清洗答案行：去除 A./B./C./D. 或 1./2./3. 等序号前缀。"""
+    text = text.strip()
+    # 匹配: (A) （A） A.  A、 A) 1. 1、 1) (1) （1） 等前缀
+    text = re.sub(r'^[（(]\s*[ABCDEFGH1-9]\s*[)）]\s*', '', text)   # (A) （1）
+    text = re.sub(r'^[ABCDEFGH1-9]\s*[.、．)）]\s*', '', text)        # A. 1、
+    return text.strip()
+
+
 def _classify(row: Dict):
     """分类题目类型，提取题干 / 选项 / 答案 / 跳关条件。"""
     q_text = row.get("题目", "")
@@ -263,9 +294,13 @@ def _classify(row: Dict):
     if row["_type"] == "CHOICE":
         row["_answer"] = re.sub(r'\s+', '', answer_raw.upper())
         row["_answer2"] = ""
+        row["_all_answers"] = [row["_answer"]]
     else:
-        row["_answer"] = answer_parts[0] if answer_parts else ""
-        row["_answer2"] = answer_parts[1] if len(answer_parts) > 1 else ""
+        # ★ 清洗答案：去除 A./B./C./1./2. 等序号前缀
+        cleaned = [_clean_answer_line(a) for a in answer_parts]
+        row["_all_answers"] = cleaned
+        row["_answer"] = cleaned[0] if cleaned else ""
+        row["_answer2"] = cleaned[1] if len(cleaned) > 1 else ""
 
     # ---------- 跳关条件 ----------
     jump = row.get("跳关条件", "").strip()
@@ -396,7 +431,8 @@ def _write_fill_excel(questions: List[Dict]) -> str:
 
     列映射: 1=题型, 2=名称, 3=学科, 4=分辨率, 5=年级, 6=阶段, 7=难度, 8=知识点,
              9=题干文本, 10=文本,
-             12-23=空1配置, 25-36=空2配置
+             空位配置: 空{i+1} 从 col (12 + i*13) 开始，每个空位占 13 列
+             每个空位: 名称/类型/答案类型/输入框样式/答案/别名/键盘/序号/底框/选项1~4
     """
     wb = openpyxl.load_workbook(FILL_TEMPLATE)
     ws = wb.active
@@ -409,7 +445,15 @@ def _write_fill_excel(questions: List[Dict]) -> str:
         # 统计填空数量（__ 或 （空格））
         blank_count = len(re.findall(r'(?:_{2,}|（\s*）)', q_text)) or 1
 
-        # ★ 分辨率：固定默认 1334*750，场景设置可覆盖
+        all_answers = q.get("_all_answers", [])
+        if not all_answers:
+            ans = q.get("_answer", "")
+            all_answers = [ans] if ans else []
+
+        # ── 空位数量：以文本中的空位数为准 ──
+        num_blanks = blank_count
+
+        # 分辨率
         scene = q.get("场景设置", "").strip()
         resolution = DEFAULT_RESOLUTION
         res_match = re.search(r'\d{3,4}\*\d{3,4}', scene)
@@ -418,28 +462,86 @@ def _write_fill_excel(questions: List[Dict]) -> str:
 
         d = {
             1: "COMPLETION",
-            2: q.get("位置", ""),           # ★ 名称
-            3: q.get("知识点", ""),          # 学科（用知识点填充）
-            4: resolution,                  # ★ 分辨率
-            9: q["_stem"][:80],            # 题干文本
-            10: q_text,                      # 文本
+            2: q.get("位置", ""),
+            3: q.get("知识点", ""),
+            4: resolution,
+            9: q["_stem"][:80],
+            10: q_text,
         }
 
-        # 空1 配置
-        if blank_count >= 1:
-            d.update({
-                12: "空1", 13: "内容型", 14: "内容", 15: "文本输入框",
-                16: q["_answer"],
-                18: "横向双线键盘", 19: "是", 20: "否",
-            })
+        # ★ 动态写入 N 个空位配置
+        for i in range(num_blanks):
+            base_col = 12 + i * 13  # 空1→12, 空2→25, 空3→38...
+            raw_answer = all_answers[i] if i < len(all_answers) else ""
+            is_last = (i == num_blanks - 1)
+            remaining = len(all_answers) - i  # 从当前位置起还剩几个答案
 
-        # 空2 配置
-        if blank_count >= 2:
+            # ── 判定：此空是否应为「选项型」 ──
+            # 规则1: 答案含分隔符（; , 、） → 拆分为选项
+            # 规则2: 仅1空但有多条答案 → 全部作为此空的选项
+            # 规则3: 多条答案但空位数少于答案数 → 最后1空收纳剩余答案作为选项
+            # 否则 → 内容型（文本输入）
+            opts = []           # 选项文本列表（最多4个）
+            main_answer = ""    # 正确答案
+            aliases = []        # 别名
+
+            # ── 检测多分隔符 ──
+            sep = None
+            for s in (";", ",", "，"):
+                if s in raw_answer:
+                    sep = s
+                    break
+
+            if sep is not None:
+                # 规则1: 分隔符 → 选项型
+                parts = [_clean_answer_line(p) for p in raw_answer.split(sep) if p.strip()]
+                main_answer = parts[0]
+                aliases = parts[1:]
+                opts = parts[:4]
+                blank_type = "选项型"
+                answer_type = "选项"
+                input_style = "选项输入框"
+            elif num_blanks == 1 and remaining > 1:
+                # 规则2: 单空多答案 → 选项型
+                candidates = all_answers[:4]
+                opts = candidates
+                main_answer = candidates[0]
+                aliases = candidates[1:]
+                blank_type = "选项型"
+                answer_type = "选项"
+                input_style = "选项输入框"
+            elif is_last and remaining > 1:
+                # 规则3: 空位数不够，最后空收纳剩余答案
+                tail = all_answers[i:]
+                opts = tail[:4]
+                main_answer = tail[0]
+                aliases = tail[1:]
+                blank_type = "选项型"
+                answer_type = "选项"
+                input_style = "选项输入框"
+            else:
+                # 默认：内容型
+                main_answer = raw_answer
+                blank_type = "内容型"
+                answer_type = "内容"
+                input_style = "文本输入框"
+
             d.update({
-                25: "空2", 26: "内容型", 27: "内容", 28: "文本输入框",
-                29: q.get("_answer2", ""),
-                31: "横向双线键盘", 32: "是", 33: "否",
+                base_col + 0: f"空{i+1}",
+                base_col + 1: blank_type,
+                base_col + 2: answer_type,
+                base_col + 3: input_style,
+                base_col + 4: main_answer,
+                base_col + 5: ";".join(aliases),
+                base_col + 6: "横向双线键盘",
+                base_col + 7: "是",
+                base_col + 8: "否",
             })
+            # 选项1~4（仅当有选项时写入）
+            for oi in range(4):
+                opt_val = opts[oi] if oi < len(opts) else ""
+                if opt_val:
+                    d[base_col + 9 + oi] = opt_val
 
         for col, val in d.items():
             if val:

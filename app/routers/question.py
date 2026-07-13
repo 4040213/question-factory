@@ -1078,24 +1078,53 @@ def _build_completion_payload(item: BlankQuestionItem, subject_id: int) -> Dict[
     }]
 
     blanks: List[Dict[str, Any]] = []
+    all_blank_options: List[Dict[str, Any]] = []  # ★ 汇总所有空位选项到 questionItem.options
+
     for idx, blank in enumerate(item.blanks or []):
         answers = [blank.answer] if blank.answer else []
         if blank.aliases:
             answers.extend([a for a in blank.aliases if a])
-        options = []
-        for opt_idx, opt in enumerate(blank.options or [], start=1):
-            options.append({
-                "uuid": str(uuid_mod.uuid4()),
-                "content": opt,
-                "optionIndex": str(opt_idx),
-                "answer": opt in answers,
-            })
+
         # ★ 使用智能布局计算的坐标
         pos = bp[idx] if idx < len(bp) else {"x": 678 + idx * 168, "y": 171}
+        is_option_type = _normalize_blank_value(blank.answerType, {"内容": "CONTENT", "选项": "OPTION"}, "CONTENT") == "OPTION"
+
+        # ── 构建选项列表（含完整元数据 — 参照 CHOICE 选项结构） ──
+        options = []
+        if is_option_type and blank.options:
+            num_opts = len(blank.options)
+            opt_gap = 8
+            opt_w = max(60, (pos["width"] - opt_gap * (num_opts - 1)) // num_opts)
+            opt_h = pos["height"]
+            total_opt_w = num_opts * opt_w + (num_opts - 1) * opt_gap
+            opt_start_x = pos["x"] + (pos["width"] - total_opt_w) // 2
+
+            for opt_idx, opt_content in enumerate(blank.options):
+                opt_x = opt_start_x + opt_idx * (opt_w + opt_gap)
+                is_answer = opt_content in answers
+                opt_payload = {
+                    "uuid": str(uuid_mod.uuid4()),
+                    "answer": is_answer,
+                    "content": opt_content,
+                    "fontSize": FONT_SIZE,
+                    "rgb": RGB,
+                    "displayBoxWeight": opt_w,
+                    "displayBoxHeight": opt_h,
+                    "coordinate": {"x": opt_x, "y": pos["y"]},
+                    "isAppear": True,
+                    "scaleValue": 100,
+                    "tmpStr": f"选项 {opt_idx + 1}",
+                    "optionIndex": str(opt_idx + 1),
+                    "isDrag": False,
+                }
+                options.append(opt_payload)
+                # ★ 同时加入 questionItem.options（莫顿画布渲染依赖此字段）
+                all_blank_options.append(opt_payload)
+
         blanks.append({
             "uuid": str(uuid_mod.uuid4()),
             "blankType": "PICTURE",
-            "answerType": _normalize_blank_value(blank.answerType, {"内容": "CONTENT", "选项": "OPTION"}, "CONTENT"),
+            "answerType": "OPTION" if is_option_type else "CONTENT",
             "blankAnswer": answers,
             "coordinate": {"x": pos["x"], "y": pos["y"]},
             "displayFormat": "OPTIONNUMBER",
@@ -1119,7 +1148,7 @@ def _build_completion_payload(item: BlankQuestionItem, subject_id: int) -> Dict[
         "inputType": 1,
         "keyBoardType": blanks[0]["keyBoardType"] if blanks else "HORIZONTAL_DOUBLE_LINE",
         "completionBlankList": blanks,
-        "options": [],
+        "options": all_blank_options,  # ★ 空位选项（含坐标/字号/颜色等完整元数据）
     }
 
     display_stem = stem_display
