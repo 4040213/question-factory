@@ -28,7 +28,7 @@
 
 **支持题型**：选择题（2~8 选项）、填空题（单空/双空，内容型/选项型）
 
-**项目规模**：Python + HTML/CSS/JS + Node.js，40+ 自动化测试。
+**项目规模**：Python + HTML/CSS/JS + Node.js，86 个自动化测试。
 
 ---
 
@@ -36,7 +36,7 @@
 
 ```bash
 # 1. 安装依赖
-pip install fastapi uvicorn httpx openpyxl python-multipart pyyaml
+pip install fastapi uvicorn httpx openpyxl python-multipart pyyaml pytest pytest-asyncio
 
 # 2. 启动
 cd "C:/Users/XQ/Desktop/question-factory"
@@ -71,34 +71,109 @@ python main.py
 
 ## 飞书文档导入 🪶
 
-> 从飞书文档一键导入题目，自动解析表格并填入 Excel 模板。
+> 粘贴飞书文档链接 → 点「转换」→ 题目自动出现在网页列表里，跟手动上传 Excel 完全一样。
 
-### 文档格式要求
+### 原理：数据怎么从飞书到莫顿？
 
-飞书文档中需包含 8 列表格：
+```
+飞书百科文档
+  ↓ ① 飞书 Open API (Blocks API)
+结构化块数据（table / text / image block）
+  ↓ ② python 解析
+question dicts（内存）
+  ↓ ③ openpyxl 写入
+本地 Excel 文件（D:\A工作\题目生成工作流\选择题_生成结果.xlsx / 填空题_生成结果.xlsx）
+  ↓ ④ 前端自动 fetch → handleFileUpload()
+前端题目列表（跟手动上传 Excel 完全一致）
+  ↓ ⑤ 用户点「批量生成」
+莫顿教学系统 API（逐题创建 + 画布排版 + 反馈配置）
+```
+
+### 文件储存
+
+| 文件 | 路径 | 说明 |
+|---|---|---|
+| 选择题模板 | `D:\A工作\题目生成工作流\选择题(模板) - 副本.xlsx` | 31 列模板，只读 |
+| 填空题模板 | `D:\A工作\题目生成工作流\填空题（模板）.xlsx` | 37 列模板，只读 |
+| **选择题生成结果** | `D:\A工作\题目生成工作流\选择题_生成结果.xlsx` | 每次转换覆盖 |
+| **填空题生成结果** | `D:\A工作\题目生成工作流\填空题_生成结果.xlsx` | 每次转换覆盖 |
+| 飞书图片 | `D:\A工作\题目生成工作流\飞书图片\` | 按 image_token 命名 |
+
+> 生成的 Excel 和模板同目录，方便你手动核对或修改后重新上传。
+
+### 解析步骤详解
+
+**① Blocks API 结构化解析**（非文本切割）
+
+旧方案用 `raw_content` 文本 + 空行分割 → 题目含内部空行时（如"拖拽效果"前空行、"image.png"后空行）8 列对齐崩溃。v2 改用 Blocks API：
+
+- 递归遍历文档 block 树（block_type: 1=页面 2=文本 4=分隔线 27=图片 31=表格 32=单元格）
+- 找出所有 `block_type=31` 表格 → 每 8 个单元格一行 → 第一行是表头，后面是数据
+- 递归读取单元格内容：文本块（block_type=2）+ 图片块（block_type=27）+ 行内图片（inline_image）
+- 子 block 间自动加 `\n`，保留文档段落结构
+
+**② 题目分类 & 属性提取**
+
+- **选项识别**：统一扫描所有 `[A-H][.、．]` 标记（支持同行多选项、跨行选项、中文全角标点）
+- **选择题**：≥2 个选项 → 题干 = 第一个选项之前的文本
+- **填空题**：无选项 → 统计 `(   )` 或 `______` 数量 → 单空 / 双空
+- **答案处理**：自动去空格 → 支持 BD 多选、跨行答案（如 `蓝球\n白球`）
+- **跳关条件**：「错一次过」→ min=1,max=1；「错三次过」→ min=1,max=3
+- **名称**：飞书「位置」列（如「关卡1-1」「轻互动2-1」）→ Excel 第 12 列「题目名称」
+
+**③ 负反馈 → 条件反馈映射**
+
+飞书「负反馈」列含多级文本（负反馈一/二/三），对应每次答错的不同提示。写入 Excel 时：
+
+| 飞书内容 | Excel 列 | 对应莫顿字段 |
+|---|---|---|
+| 负反馈一（第一段提示） | 21「答错通用反馈」 | wrongFeedback（通用，任何错次都显示） |
+| 全部负反馈（清洗标签后合并） | 29「条件反馈文本」 | conditionFeedbacks[0].content |
+| 跳关条件 | 27「最少错次」/ 28「最多错次」 | minWrong / maxWrong |
+
+**④ 图片处理**
+
+block_type=27 或 inline_image → 提取 `image_token` → 调用 `GET /drive/v1/medias/{token}/download` 下载到本地 `飞书图片/` 目录 → token 写入 Excel 第 19 列「题目图片」
+
+### 前端展示流程
+
+```
+点「转换」→ POST /api/feishu/convert（等待飞书 API + Excel 生成）
+  ↓ 返回 {success, summary: {total, choice, fill, items}, files}
+前端展示：
+  ├─ 摘要：共 X 题（选择 X，填空 X） + 每题明细
+  ├─ 📥 下载按钮（可点击保存 Excel 到本地）
+  └─ 自动加载 Excel → 题目列表（可直接预览/生成）
+```
+
+### 飞书文档格式要求
 
 | 位置 | 知识点 | 题目 | 答案 | 正反馈 | 负反馈 | 跳关条件 | 场景设置 |
 |---|---|---|---|---|---|---|---|
-| 关卡1-1 | 概率 | 下列事件中... | D | 太棒了 | 再想想 | 错一次过 | |
+| 关卡1-1 | 概率 | 下列事件中...<br>A.xxx B.xxx C.xxx D.xxx | D | 太棒了 | 负反馈一：再想想<br>负反馈二：提示<br>负反馈三：解释 | 错一次过 | |
 
-- 每道题一个表格，8 列顺序固定
-- 题目列可包含多行（选项 A.xxx / B.xxx）
-- 支持选择题（自动识别 A/B/C/D 选项）和填空题（含 ______ 标记）
-- 跳关条件支持「错一次过」「错三次过」及数字范围
+- 8 列顺序固定，每道题一个表格
+- 题目列支持 A.xxx / B.xxx 等多行选项或同行选项
+- 填空题为 `(    )` 或 `______` 格式
+- 负反馈支持多级（负反馈一/二/三），自动拆分到通用答错 + 条件反馈
+- 支持嵌入图片（block 图片或行内图片）
 
-### 配置飞书 API（首次使用需 3 分钟）
+### 配置飞书 API
 
-1. 访问 [飞书开放平台](https://open.feishu.cn/app) → 创建企业自建应用
-2. 添加权限：`doc:document:readonly`、`wiki:wiki:readonly`
-3. 发布应用 → 管理后台审批
-4. 在 `app/routers/feishu.py` 中填入 `APP_ID` 和 `APP_SECRET`
+环境变量方式（推荐）：
+```bash
+export FEISHU_APP_ID=cli_xxxx
+export FEISHU_APP_SECRET=xxxx
+```
+
+所需权限：`doc:document:readonly` + `wiki:wiki:readonly` + `drive:drive:readonly`（图片下载）
 
 ### API 端点
 
-| 端点 | 用途 |
-|---|---|
-| `POST /api/feishu/convert` | 飞书文档 → Excel 转换 |
-| `GET /api/feishu/download` | 下载生成的 Excel 文件 |
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/api/feishu/convert` | 提交飞书文档 URL，返回解析结果 + Excel 文件路径 |
+| GET | `/api/feishu/download?path=...` | 下载生成的 Excel（也用于前端自动加载） |
 
 ---
 
@@ -218,8 +293,9 @@ python -m pytest tests/ -v
 |---|---|---|
 | test_question.py | 40 | Excel解析、布局引擎、Payload构建 |
 | test_auth.py | 20 | Cookie/JWT/过期检测 |
-| test_client.py | 10 | HTTP重试机制 |
+| test_client.py | 10 | HTTP重试机制（含异步） |
 | test_mappings.py | 16 | 映射表正确性 |
+| **合计** | **86** | `python -m pytest tests/ -v` |
 
 ---
 

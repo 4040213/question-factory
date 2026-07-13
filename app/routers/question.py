@@ -256,7 +256,8 @@ def _apply_defaults(item: QuestionItem, body) -> None:
         item.backgroundUrl = body.defaultBackgroundUrl
 
     # 条件反馈全局默认（仅当逐题未设置时生效）
-    if (not getattr(item, "conditionFeedbacks", []) or len(getattr(item, "conditionFeedbacks", [])) == 0) and body.defaultConditionFeedback:
+    cond_fbs = getattr(item, "conditionFeedbacks", None)
+    if (cond_fbs is None or len(cond_fbs) == 0) and body.defaultConditionFeedback:
         cf = body.defaultConditionFeedback
         # 只有填写了反馈文本时才添加
         if cf.content and cf.content.strip():
@@ -415,6 +416,7 @@ def _calculate_smart_layout(
     context_texts: List[str] = None,
     question_images: List[dict] = None,
     background_url: str = None,
+    resolution: str = "1334*750",
 ) -> dict:
     """智能画布布局引擎 — 4 阶段核心逻辑。
 
@@ -424,6 +426,7 @@ def _calculate_smart_layout(
         context_texts: 文本块内容列表
         question_images: 题目图片 [{url, width, height}, ...]
         background_url: 画布背景图 URL
+        resolution: 分辨率字符串，如 "1334*750"
 
     返回:
         {
@@ -434,14 +437,24 @@ def _calculate_smart_layout(
             "font_size": int,
         }
     """
-    # ── 内容区域常量 ──
-    CL = 182          # Content Left
-    CR = 1152         # Content Right
-    CT = 130          # Content Top
-    CB = 580          # Content Bottom
-    CW = CR - CL      # 970
-    CH = CB - CT      # 450
-    CCX = (CL + CR) // 2  # 667
+    # ── 分辨率 → 缩放比例 ──
+    if "*" in resolution:
+        parts = resolution.replace("高清", "").strip().split("*")
+        _rw = int(parts[0]) if parts[0].isdigit() else 1334
+        _rh = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 750
+    else:
+        _rw, _rh = 1334, 750
+    scale_x = _rw / 1334.0
+    scale_y = _rh / 750.0
+
+    # ── 内容区域：按分辨率等比缩放 ──
+    CL = int(182 * scale_x)
+    CR = int(1152 * scale_x)
+    CT = int(130 * scale_y)
+    CB = int(580 * scale_y)
+    CW = CR - CL
+    CH = CB - CT
+    CCX = (CL + CR) // 2
 
     # ── 边距常量 ──
     PAD_TOP = 20
@@ -544,7 +557,7 @@ def _calculate_smart_layout(
     # 2d. 选项可用空间 — 无内容时自动垂直居中
     upper_content_h = (img_total_h + MIN_GAP if has_images else 0) + text_top_area_h
     option_available_h = CH - PAD_TOP - upper_content_h - MIN_GAP - PAD_BOTTOM
-    OPTION_H = max(100, min(130, option_available_h))
+    OPTION_H = max(100, min(160, option_available_h))
 
     if upper_content_h == 0:
         option_y_base = CT + PAD_TOP + (CH - PAD_TOP - PAD_BOTTOM - OPTION_H) // 2
@@ -805,6 +818,7 @@ def _build_choice_payload(item: QuestionItem, subject_id: int) -> Dict[str, Any]
         context_texts=item.contexts if item.contexts else None,
         question_images=item.questionImages if item.questionImages else None,
         background_url=item.backgroundUrl if item.backgroundUrl else None,
+        resolution=item.resolution or "1334*750",
     )
     opt_positions = layout["option_positions"]
     txt_positions = layout["text_positions"]
@@ -923,8 +937,110 @@ def _build_choice_payload(item: QuestionItem, subject_id: int) -> Dict[str, Any]
     return {"questionData": question_data}, question_data
 
 
+def _calculate_blank_smart_layout(
+    stem_text: str,
+    blank_count: int,
+    resolution: str = "1334*750",
+) -> dict:
+    """填空题智能布局引擎 — 根据题目文本和空位数自动计算坐标。
+
+    返回:
+        {
+            "text_position": {"x": int, "y": int, "width": int, "font_size": int},
+            "blank_positions": [{"x": int, "y": int, "width": int, "height": int}, ...],
+        }
+    """
+    # ── 解析分辨率 → 画布尺寸 ──
+    if "*" in resolution:
+        parts = resolution.replace("高清", "").strip().split("*")
+        CW = int(parts[0]) if parts[0].isdigit() else 1334
+        CH = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 750
+    else:
+        CW, CH = 1334, 750
+
+    # ── 按比例缩放绿框 ──
+    # 基准: 1334*750 → 绿框 x=182~1152 (宽970), y=130~580 (高450)
+    scale_x = CW / 1334.0
+    scale_y = CH / 750.0
+    scale = min(scale_x, scale_y)
+
+    CONTENT_LEFT = int(182 * scale_x)
+    CONTENT_RIGHT = int(1152 * scale_x)
+    CONTENT_TOP = int(130 * scale_y)
+    CONTENT_BOTTOM = int(580 * scale_y)
+    CONTENT_W = CONTENT_RIGHT - CONTENT_LEFT
+    CONTENT_H = CONTENT_BOTTOM - CONTENT_TOP
+    CENTER_X = (CONTENT_LEFT + CONTENT_RIGHT) // 2
+
+    PAD = int(20 * scale)
+
+    # ── 字号：根据文本长度自适应 ──
+    text_len = len(stem_text) if stem_text else 0
+    if text_len <= 15:
+        FONT_SIZE = int(50 * scale)
+    elif text_len <= 40:
+        FONT_SIZE = int(45 * scale)
+    else:
+        FONT_SIZE = max(int(40 * scale), 24)
+
+    # ── 文本测量 ──
+    text_zone_w = CONTENT_W - PAD * 2
+    m = _measure_paragraph(stem_text, FONT_SIZE, text_zone_w)
+    text_h = m["total_height"]
+
+    # ── 文本位置：绿框顶部居中 ──
+    text_y = CONTENT_TOP + PAD
+    text_position = {
+        "x": CONTENT_LEFT + PAD,
+        "y": text_y,
+        "width": text_zone_w,
+        "font_size": FONT_SIZE,
+    }
+
+    # ── 空位尺寸 ──
+    BLANK_W = max(int(146 * scale), 100)
+    BLANK_H = max(int(63 * scale), 48)
+    BLANK_GAP = max(int(40 * scale), 20)
+
+    # ── 空位区域 ──
+    text_bottom = text_y + text_h
+    blank_area_top = text_bottom + PAD
+    blank_area_bottom = CONTENT_BOTTOM - PAD
+    blank_area_h = blank_area_bottom - blank_area_top
+
+    # 如果空位区域不够，向上挤压（减少文本底部间距）
+    if blank_area_h < BLANK_H and text_bottom > CONTENT_TOP + PAD * 2:
+        blank_area_top = max(CONTENT_TOP + PAD, CONTENT_BOTTOM - PAD - BLANK_H)
+        blank_area_h = blank_area_bottom - blank_area_top
+
+    # ── 空位横向排列：居中 ──
+    total_blank_w = blank_count * BLANK_W + (blank_count - 1) * BLANK_GAP
+    if total_blank_w > CONTENT_W - PAD * 2:
+        # 超出则压缩
+        available = CONTENT_W - PAD * 2
+        BLANK_W = max(80, (available - (blank_count - 1) * BLANK_GAP) // blank_count)
+        total_blank_w = blank_count * BLANK_W + (blank_count - 1) * BLANK_GAP
+
+    blank_start_x = CENTER_X - total_blank_w // 2
+    blank_y = blank_area_top + (blank_area_h - BLANK_H) // 2  # 垂直居中
+
+    blank_positions = []
+    for i in range(blank_count):
+        blank_positions.append({
+            "x": blank_start_x + i * (BLANK_W + BLANK_GAP),
+            "y": blank_y,
+            "width": BLANK_W,
+            "height": BLANK_H,
+        })
+
+    return {
+        "text_position": text_position,
+        "blank_positions": blank_positions,
+    }
+
+
 def _build_completion_payload(item: BlankQuestionItem, subject_id: int) -> Dict[str, Any]:
-    """构建填空题 COMPLETION 接口的完整 payload。"""
+    """构建填空题 COMPLETION 接口的完整 payload（智能布局引擎）。"""
     FONT_SIZE = 32
     RGB = "#9f765b"
 
@@ -936,19 +1052,27 @@ def _build_completion_payload(item: BlankQuestionItem, subject_id: int) -> Dict[
     else:
         CANVAS_WIDTH, CANVAS_HEIGHT = 1334, 750
 
-    def _blank_coord(index: int) -> Dict[str, int]:
-        return {"x": 678 + index * 168, "y": 171}
-
+    # ★ 智能布局引擎：根据文本长度 + 空位数 + 分辨率自动计算坐标
     stem_display = item.stem.replace("______", "")
     context_source = item.contexts[0] if item.contexts else item.stem
     context_display = context_source.replace("______", "")
+    blank_count = len(item.blanks) if item.blanks else 1
+
+    layout = _calculate_blank_smart_layout(
+        stem_text=context_display,
+        blank_count=blank_count,
+        resolution=res,
+    )
+    tp = layout["text_position"]
+    bp = layout["blank_positions"]
+
     contexts = [{
         "content": context_display,
-        "size": 40,
+        "size": tp["font_size"],
         "rgb": RGB,
-        "coordinate": {"x": 479, "y": 178},
-        "displayBoxWeight": 360,
-        "displayBoxHeight": 56,
+        "coordinate": {"x": tp["x"], "y": tp["y"]},
+        "displayBoxWeight": tp["width"],
+        "displayBoxHeight": int(tp["font_size"] * _LH_RATIO * 2),
         "isDrag": True,
         "uuid": str(uuid_mod.uuid4()),
     }]
@@ -966,20 +1090,22 @@ def _build_completion_payload(item: BlankQuestionItem, subject_id: int) -> Dict[
                 "optionIndex": str(opt_idx),
                 "answer": opt in answers,
             })
+        # ★ 使用智能布局计算的坐标
+        pos = bp[idx] if idx < len(bp) else {"x": 678 + idx * 168, "y": 171}
         blanks.append({
             "uuid": str(uuid_mod.uuid4()),
             "blankType": "PICTURE",
             "answerType": _normalize_blank_value(blank.answerType, {"内容": "CONTENT", "选项": "OPTION"}, "CONTENT"),
             "blankAnswer": answers,
-            "coordinate": _blank_coord(idx),
+            "coordinate": {"x": pos["x"], "y": pos["y"]},
             "displayFormat": "OPTIONNUMBER",
             "fontSize": FONT_SIZE,
             "frontType": "blank",
-            "height": 63,
+            "height": pos["height"],
             "rgb": RGB,
             "styleType": 1,
             "top": False,
-            "weight": 146,
+            "weight": pos["width"],
             "keyBoardType": _normalize_blank_value(blank.keyboardStyle, {"横向双线键盘": "HORIZONTAL_DOUBLE_LINE"}, "HORIZONTAL_DOUBLE_LINE"),
             "options": options,
             "questionType": QUESTION_TYPE_COMPLETION,
@@ -1218,13 +1344,27 @@ async def batch_create_stream(body: BatchRequest):
                     question_id = result.get("data")
                     update_error = await _update_question(client, question_data, question_id, item)
                     success_count += 1
-                    evt = {"index": idx, "success": True, "questionId": question_id, "feedbackError": update_error or None, "progress": progress_str, "percent": percent}
+                    evt = {
+                        "index": idx, "success": True, "questionId": question_id,
+                        "progress": progress_str, "percent": percent,
+                        "feedbackError": update_error or None,
+                        "warning": f"⚠️ 题目已创建但元数据/反馈更新失败: {update_error}" if update_error else None,
+                    }
                     yield f"data: {json.dumps(evt, ensure_ascii=False)}\n\n"
 
                 except MortonClientError as e:
                     fail_count += 1
                     percent = round((idx + 1) / total * 100)
                     evt = {"index": idx, "success": False, "error": e.message, "progress": f"{idx+1}/{total}", "percent": percent}
+                    yield f"data: {json.dumps(evt, ensure_ascii=False)}\n\n"
+
+                except Exception as e:
+                    # ★ 捕获所有异常，避免一道题崩溃导致整个批次中断
+                    fail_count += 1
+                    percent = round((idx + 1) / total * 100)
+                    error_msg = f"{type(e).__name__}: {e}"
+                    print(f"[ERROR] 第{idx+1}题异常: {error_msg}")
+                    evt = {"index": idx, "success": False, "error": error_msg, "progress": f"{idx+1}/{total}", "percent": percent}
                     yield f"data: {json.dumps(evt, ensure_ascii=False)}\n\n"
 
                 if idx < total - 1:
@@ -1236,6 +1376,10 @@ async def batch_create_stream(body: BatchRequest):
 
         except MortonClientError as e:
             evt = {"done": True, "total": total, "successCount": success_count, "failCount": fail_count, "fatalError": e.message}
+            yield f"data: {json.dumps(evt, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            # ★ 兜底：任何未预期的异常都发送 done 事件，避免前端进度条永远转圈
+            evt = {"done": True, "total": total, "successCount": success_count, "failCount": fail_count, "fatalError": f"{type(e).__name__}: {e}"}
             yield f"data: {json.dumps(evt, ensure_ascii=False)}\n\n"
         finally:
             await client.close()
@@ -1262,7 +1406,7 @@ async def parse_blank_excel(file: UploadFile) -> Dict[str, Any]:
         questions: List[Dict[str, Any]] = []
 
         def get(row, idx, default=""):
-            if idx < len(row) and row[idx] is not None:
+            if idx >= 0 and idx < len(row) and row[idx] is not None:
                 return row[idx]
             return default
 

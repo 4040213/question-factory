@@ -58,7 +58,7 @@
     .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-dim); }
     .btn-outline:hover { background: var(--bg-input); color: var(--text); }
     .btn-sm { padding: 8px 15px; font-size: 14px; border-radius: 4px; }
-    .status { padding: 10px 14px; border-radius: var(--radius-sm); font-size: 15px; margin-top: 10px; font-weight: 500; line-height: 1.5; }
+    .status { padding: 10px 14px; border-radius: var(--radius-sm); font-size: 15px; margin-top: 10px; font-weight: 500; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
     .status-success { background: var(--green-bg); border: 1px solid rgba(34,197,94,0.2); color: var(--green); }
     .status-error { background: var(--red-bg); border: 1px solid rgba(239,68,68,0.2); color: var(--red); }
     .status-info { background: var(--accent-bg); border: 1px solid var(--accent-border); color: #a78bfa; }
@@ -186,10 +186,6 @@
                 <option value="CHOICE">选择题</option>
                 <option value="BLANK">填空题</option>
               </select>
-            </div>
-            <div>
-              <label>填空题空位命名</label>
-              <input id="blank-field-label-input" value="空1" placeholder="如：空1">
             </div>
           </div>
           <div class="file-input-wrapper"><button class="btn btn-primary" style="width:100%">选择 Excel 文件（可多选）</button><input type="file" id="file-input" accept=".xlsx,.xls" multiple onchange="handleFileUpload(event)"></div>
@@ -602,14 +598,43 @@
         if (!data.success) {
           status.className = 'status status-error';
           status.textContent = '❌ ' + (data.error || '转换失败');
+          btn.disabled = false;
+          btn.textContent = '转换';
           return;
         }
 
-        status.className = 'status status-success';
         const s = data.summary;
-        status.textContent = `✅ 转换完成！共 ${s.total} 题（选择题 ${s.choice_count}，填空题 ${s.fill_count}）`;
 
-        // 自动触发生成的 Excel 解析：模拟文件上传
+        // 构建带下载按钮的 HTML
+        let html = `<div style="font-weight:600;margin-bottom:6px;">✅ 提取完成！共 ${s.total} 题（选择题 ${s.choice}，填空题 ${s.fill}`;
+        if (s.images_downloaded > 0) html += `，图片 ${s.images_downloaded} 张`;
+        html += `）</div>`;
+
+        // 题目明细
+        if (s.items && s.items.length > 0) {
+          html += `<div style="font-size:14px;color:var(--text-dim);max-height:200px;overflow-y:auto;margin-bottom:10px;">`;
+          s.items.forEach((item, i) => {
+            const imgIcon = item['图片'] > 0 ? ' 🖼' : '';
+            html += `<div style="padding:2px 0;">${i+1}. [${item['题型']}] ${item['位置']} — ${item['题干']}（答案: ${item['答案']}）${imgIcon}</div>`;
+          });
+          html += `</div>`;
+        }
+
+        // 下载按钮
+        if (data.files && data.files.length > 0) {
+          html += `<div style="display:flex;gap:8px;flex-wrap:wrap;">`;
+          data.files.forEach(fp => {
+            const fn = fp.split('\\').pop().split('/').pop();
+            html += `<a href="/api/feishu/download?path=${encodeURIComponent(fp)}" 
+              class="btn btn-primary" style="font-size:13px;padding:6px 14px;text-decoration:none;" download>📥 ${fn}</a>`;
+          });
+          html += `</div>`;
+        }
+
+        status.className = 'status status-success';
+        status.innerHTML = html;
+
+        // 自动加载生成的 Excel 到题目列表
         for (const filePath of data.files) {
           const filename = filePath.split('\\').pop().split('/').pop();
           await loadGeneratedExcel(filePath, filename);
@@ -633,6 +658,21 @@
         const dt = new DataTransfer();
         dt.items.add(file);
         document.getElementById('file-input').files = dt.files;
+
+        // ★ 自动检测题型：根据文件名判断是选择题还是填空题
+        const fnLower = filename.toLowerCase();
+        let detectedType = 'CHOICE';  // 默认选择题
+        if (fnLower.includes('填空') || fnLower.includes('fill') || fnLower.includes('completion')) {
+          detectedType = 'BLANK';
+        } else if (fnLower.includes('选择') || fnLower.includes('choice')) {
+          detectedType = 'CHOICE';
+        }
+        // 同步更新下拉框
+        const typeSelect = document.getElementById('question-type-select');
+        if (typeSelect) {
+          typeSelect.value = detectedType;
+        }
+
         await handleFileUpload({ target: { files: [file] } });
       } catch (e) {
         console.error('加载生成Excel失败:', e);

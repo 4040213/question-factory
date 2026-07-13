@@ -6,6 +6,8 @@ Python 后端仅负责调度和缓存，实际的浏览器操作由 screenshot.j
 
 import asyncio
 import hashlib
+import os
+import shutil
 import time
 from pathlib import Path
 
@@ -18,7 +20,21 @@ router = APIRouter(prefix="/api/screenshot", tags=["截图预览"])
 # ========== 配置 ==========
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 SCREENSHOT_SCRIPT = PROJECT_ROOT / "screenshot.js"
-NODE_PATH = r"C:\Users\XQ\.workbuddy\binaries\node\versions\22.22.2\node.exe"
+
+# ★ Node.js 路径：环境变量优先 → 自动检测 PATH 中的 node → 默认路径兜底
+import shutil
+_NODE_ENV = os.environ.get("NODE_PATH", "")
+_NODE_DEFAULT = r"C:\Users\XQ\.workbuddy\binaries\node\versions\22.22.2\node.exe"
+
+if _NODE_ENV and Path(_NODE_ENV).exists():
+    NODE_PATH = _NODE_ENV
+else:
+    # 尝试从 PATH 自动检测
+    _detected = shutil.which("node")
+    if _detected:
+        NODE_PATH = _detected
+    else:
+        NODE_PATH = _NODE_DEFAULT
 
 # ========== 截图缓存 ==========
 _screenshot_cache: dict = {}   # {cache_key: (png_bytes, timestamp)}

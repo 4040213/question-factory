@@ -10,10 +10,14 @@ from app.__init__ import create_app
 from app.routers.question import (
     _measure_paragraph,
     _calculate_smart_layout,
+    _calculate_blank_smart_layout,
     _build_choice_payload as _build_insert_payload,
+    _build_completion_payload,
     _apply_defaults,
     QuestionItem,
     ChoiceOption,
+    BlankQuestionItem,
+    BlankField,
     BatchRequest,
 )
 
@@ -241,6 +245,228 @@ class TestBuildInsertPayload:
         ctx = payload["questionData"]["contexts"][0]
         # contexts 不再包含 displayBoxWeight/textAlign
         assert ctx["coordinate"]["x"] == 202  # 文本 x=202
+
+
+class TestBlankSmartLayout:
+    """填空题智能布局测试。"""
+
+    def test_single_blank_default_resolution(self):
+        layout = _calculate_blank_smart_layout("1+1=______", 1)
+        assert "text_position" in layout
+        assert "blank_positions" in layout
+        assert len(layout["blank_positions"]) == 1
+        # 空白应在绿框内容区内 (1334*750 → x=182~1152, y=130~580)
+        bp = layout["blank_positions"][0]
+        assert 182 <= bp["x"] <= 1152
+        assert 130 <= bp["y"] <= 580
+
+    def test_double_blank(self):
+        layout = _calculate_blank_smart_layout("1+1=______, 2+2=______", 2)
+        assert len(layout["blank_positions"]) == 2
+        # 两个空白不应重叠
+        b0, b1 = layout["blank_positions"]
+        assert b0["x"] + b0["width"] <= b1["x"], "两个空白不应重叠"
+
+    def test_long_text_smaller_font(self):
+        short = _calculate_blank_smart_layout("短", 1)
+        long = _calculate_blank_smart_layout("这是一段很长很长很长很长很长很长很长的内容" * 3, 1)
+        assert short["text_position"]["font_size"] >= long["text_position"]["font_size"]
+
+    def test_custom_resolution_scales(self):
+        layout_1080p = _calculate_blank_smart_layout("1+1=______", 1, resolution="1920*1080")
+        layout_default = _calculate_blank_smart_layout("1+1=______", 1, resolution="1334*750")
+        # 1080p 的空白 x 坐标应该更大（画布更宽）
+        bp_1080p = layout_1080p["blank_positions"][0]
+        bp_default = layout_default["blank_positions"][0]
+        assert bp_1080p["x"] > bp_default["x"], "更宽的分辨率应该有更大的 x 坐标"
+
+    def test_text_in_content_area(self):
+        layout = _calculate_blank_smart_layout("填空题测试文本内容", 3)
+        tp = layout["text_position"]
+        assert tp["x"] >= 182, f"文本 x={tp['x']} 超出左边界"
+        for bp in layout["blank_positions"]:
+            assert 182 <= bp["x"] <= 1152, f"空白 x={bp['x']} 超出"
+            assert 130 <= bp["y"] <= 580, f"空白 y={bp['y']} 超出"
+
+
+class TestBuildCompletionPayload:
+    """填空题 payload 构建测试。"""
+
+    def test_minimal_completion(self):
+        item = BlankQuestionItem(
+            stem="1+1=______",
+            name="填空题测试",
+            subjectId=4,
+            blanks=[BlankField(varName="空1", answer="2")],
+        )
+        payload, question_data = _build_completion_payload(item, 4)
+        assert "questionData" in payload
+        qd = payload["questionData"]
+        assert qd["questionType"] == "COMPLETION"
+        assert qd["name"] == "填空题测试"
+        assert len(qd["questionItem"]["completionBlankList"]) == 1
+
+    def test_double_blank(self):
+        item = BlankQuestionItem(
+            stem="1+1=______, 2+2=______",
+            name="双空测试",
+            subjectId=4,
+            blanks=[
+                BlankField(varName="空1", answer="2"),
+                BlankField(varName="空2", answer="4"),
+            ],
+        )
+        payload, _ = _build_completion_payload(item, 4)
+        blanks = payload["questionData"]["questionItem"]["completionBlankList"]
+        assert len(blanks) == 2
+        assert blanks[0]["blankAnswer"] == ["2"]
+        assert blanks[1]["blankAnswer"] == ["4"]
+
+    def test_blank_with_aliases(self):
+        item = BlankQuestionItem(
+            stem="填入颜色______",
+            name="别名测试",
+            subjectId=4,
+            blanks=[BlankField(varName="空1", answer="红色", aliases=["红", "red"])],
+        )
+        payload, _ = _build_completion_payload(item, 4)
+        answers = payload["questionData"]["questionItem"]["completionBlankList"][0]["blankAnswer"]
+        assert "红色" in answers
+        assert "红" in answers
+        assert "red" in answers
+
+    def test_resolution_propagates(self):
+        item = BlankQuestionItem(
+            stem="1+1=______",
+            name="分辨率测试",
+            subjectId=4,
+            resolution="1920*1080",
+            blanks=[BlankField(varName="空1", answer="2")],
+        )
+        payload, _ = _build_completion_payload(item, 4)
+        qd = payload["questionData"]
+        assert qd["autoWidth"] == 1920
+        assert qd["autoHeight"] == 1080
+        assert qd["resolution"] == "1920*1080"
+
+    def test_completion_with_knowledge(self):
+        item = BlankQuestionItem(
+            stem="1+1=______",
+            name="知识点测试",
+            subjectId=4,
+            knowledge="加法;进位",
+            blanks=[BlankField(varName="空1", answer="2")],
+        )
+        payload, _ = _build_completion_payload(item, 4)
+        assert payload["questionData"]["knowledge"] == ["加法", "进位"]
+
+    def test_blank_positions_are_different(self):
+        """两个空白的坐标不应相同。"""
+        item = BlankQuestionItem(
+            stem="a=______, b=______",
+            name="坐标测试",
+            subjectId=4,
+            blanks=[
+                BlankField(varName="空1", answer="1"),
+                BlankField(varName="空2", answer="2"),
+            ],
+        )
+        payload, _ = _build_completion_payload(item, 4)
+        blanks = payload["questionData"]["questionItem"]["completionBlankList"]
+        assert len(blanks) == 2
+        b0, b1 = blanks[0]["coordinate"], blanks[1]["coordinate"]
+        assert b0 != b1, "两个空位的坐标应该不同"
+
+
+class TestBlankExcelParsing:
+    """填空题 Excel 解析测试。"""
+
+    def _make_excel_bytes(self, rows: list) -> bytes:
+        from openpyxl import Workbook
+        wb = Workbook()
+        ws = wb.active
+        for row in rows:
+            ws.append(row)
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        return buf.read()
+
+    def test_parse_single_blank(self, client):
+        data = self._make_excel_bytes([
+            ["题型", "名称", "学科", "分辨率", "年级", "阶段", "难度", "知识点",
+             "题干文本", "文本", "题干音频",
+             "空1名称", "空1类型", "空1答案类型", "空1输入框样式", "空1答案",
+             "空1答案别名", "空1键盘样式", "空1显示序号", "空1显示选项底框",
+             "空1选项1", "空1选项2", "空1选项3", "空1选项4"],
+            ["COMPLETION", "填空题1", "数学", "1334*750", "三年级", "春", "3", "加法",
+             "1+1等于几？", "1+1=______", "",
+             "空1", "内容型", "内容", "文本输入框", "2",
+             "", "横向双线键盘", "是", "否",
+             "", "", "", ""],
+        ])
+        response = client.post(
+            "/api/question/parse-excel?question_type=BLANK",
+            files={"file": ("blank_test.xlsx", data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+        assert response.status_code == 200
+        result = response.json()
+        assert result["success"] is True
+        assert len(result["questions"]) == 1
+        q = result["questions"][0]
+        assert q["questionType"] == "COMPLETION"
+        assert q["name"] == "填空题1"
+        assert q["subjectId"] > 0
+        assert q["resolution"] == "1334*750"
+        assert len(q["blanks"]) == 1
+        assert q["blanks"][0]["answer"] == "2"
+
+    def test_parse_double_blank(self, client):
+        data = self._make_excel_bytes([
+            ["题型", "名称", "学科", "分辨率", "年级", "阶段", "难度", "知识点",
+             "题干文本", "文本",
+             "空1名称", "空1类型", "空1答案类型", "空1输入框样式", "空1答案",
+             "空1键盘样式", "空1显示序号", "空1显示选项底框",
+             "空2名称", "空2类型", "空2答案类型", "空2输入框样式", "空2答案",
+             "空2键盘样式", "空2显示序号", "空2显示选项底框"],
+            ["COMPLETION", "双空", "数学", "1334*750", "", "", "", "",
+             "计算", "1+1=______, 2+2=______",
+             "空1", "内容型", "内容", "文本输入框", "2",
+             "横向双线键盘", "是", "否",
+             "空2", "内容型", "内容", "文本输入框", "4",
+             "横向双线键盘", "是", "否"],
+        ])
+        response = client.post(
+            "/api/question/parse-excel?question_type=BLANK",
+            files={"file": ("double_blank.xlsx", data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+        assert response.status_code == 200
+        result = response.json()
+        assert result["success"] is True
+        q = result["questions"][0]
+        assert len(q["blanks"]) == 2
+        assert q["blanks"][0]["answer"] == "2"
+        assert q["blanks"][1]["answer"] == "4"
+
+    def test_parse_blank_with_aliases(self, client):
+        data = self._make_excel_bytes([
+            ["题型", "名称", "学科", "分辨率", "年级", "阶段", "难度", "知识点",
+             "题干文本", "文本",
+             "空1名称", "空1类型", "空1答案类型", "空1输入框样式", "空1答案",
+             "空1答案别名", "空1键盘样式", "空1显示序号", "空1显示选项底框"],
+            ["COMPLETION", "别名测试", "", "1334*750", "", "", "", "",
+             "颜色填空", "苹果是______的",
+             "空1", "内容型", "内容", "文本输入框", "红色",
+             "红;red", "横向双线键盘", "是", "否"],
+        ])
+        response = client.post(
+            "/api/question/parse-excel?question_type=BLANK",
+            files={"file": ("alias.xlsx", data, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+        assert response.status_code == 200
+        q = response.json()["questions"][0]
+        assert len(q["blanks"][0]["aliases"]) == 2
+        assert "红" in q["blanks"][0]["aliases"]
 
 
 class TestBatchRequest:
