@@ -174,6 +174,121 @@
             <button class="btn btn-primary" id="feishu-convert-btn" onclick="feishuConvert()">转换</button>
           </div>
           <div id="feishu-status" class="hidden"></div>
+
+          <!-- 莫顿素材库 URL 读回 -->
+          <div id="morton-readback-section" style="margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-secondary);">
+            <div style="font-weight:600;margin-bottom:8px;font-size:14px;">🔗 莫顿素材库 URL 读回（图片匹配）</div>
+            <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;">
+              ① 在 Figma 导出前把画板命名为 <code>Q03-bg</code>(背景) / <code>Q03</code>(题目图) / <code>Q03-A</code>(选项A) 等，上传到莫顿素材库一个文件夹；<br>
+              ② 填文件夹 ID 点「读回 URL」→ 按文件名自动匹配回填；<br>
+              ③ 文件名无规律的图会进下方「手动映射」面板，逐张指派到题目与角色。<br>
+              <span style="color:#94a3b8;">注：不存在"答案图"——答案是图片时它就是某个选项图，正确选项靠题目的「答案」字段标记（如答案填 B，即选项B的图就是答案）。</span>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+              <input id="morton-folder-id" placeholder="素材库文件夹 ID（如 229880）" style="width:200px;padding:6px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg-input);color:var(--text);">
+              <button class="btn btn-primary" id="morton-readback-btn" onclick="mortonReadback()" style="font-size:13px;padding:6px 14px;">读回 URL</button>
+            </div>
+            <div id="morton-readback-status" class="hidden" style="margin-top:8px;"></div>
+            <div id="morton-manual-panel" class="hidden" style="margin-top:12px;"></div>
+
+            <!-- ★ 优化口径：素材清单 JSON 导入（命名自动化入口） -->
+            <div style="margin-top:10px;padding:8px;border:1px dashed #8b5cf6;border-radius:6px;background:rgba(139,92,246,0.05);">
+              <div style="font-size:12px;font-weight:600;color:#8b5cf6;margin-bottom:3px;">📋 素材清单导入（命名自动化 · 优化口径）</div>
+              <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;line-height:1.5;">
+                不想给文件手工按题命名？导出一个 <code>materials.json</code> 声明「每题用哪些图/音频」即可（结构见控制台 <code>MATERIAL_BINDING</code> 注释）。未来「组课文档→Excel」步骤会自动产出此清单。
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <input type="file" id="manifest-file" accept=".json,application/json" style="font-size:12px;">
+                <button type="button" onclick="importMaterialManifest()" style="font-size:12px;padding:5px 12px;border:1px solid #8b5cf6;border-radius:4px;background:#8b5cf6;color:#fff;cursor:pointer;">导入并绑定</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 语音反馈素材（拖入自动识别） v2 -->
+          <div id="voice-feedback-section" style="margin-top:12px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-secondary);">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+              <span style="font-weight:600;font-size:14px;">🔊 语音反馈素材 <span style="font-size:11px;color:#94a3b8;font-weight:400;">v2 拖入自动识别</span></span>
+              <button type="button" id="voice-clear-btn" onclick="clearVoiceState()" style="display:none;font-size:11px;padding:3px 10px;border:1px solid #ef4444;border-radius:4px;background:transparent;color:#ef4444;cursor:pointer;">🗑 清除语音</button>
+            </div>
+            <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;line-height:1.55;">
+              ① 下载组课文档的语音压缩包 → 解压 → <b>把 mp3/wav 文件拖到下方区域</b>（或点击选择文件）；<br>
+              ② 系统按文件名自动识别「正反馈 / 负反馈1/2/3」并展示；<br>
+              ③ 把同一批语音<b>上传到莫顿素材库</b> → 点上方「读回 URL」→ 自动匹配 CDN 地址 → 直接生成。<br>
+              <span style="color:#94a3b8;">支持两种命名：关卡专属(_r_/_w_1~3) 和通用(正反馈/第N次错误)。未识别的文件会标黄。</span>
+            </div>
+
+            <!-- ★ 拖拽区 -->
+            <div id="voice-drop-zone"
+              ondragover="event.preventDefault();this.style.borderColor='#22c55e';this.style.background='rgba(34,197,94,0.08)';"
+              ondragleave="this.style.borderColor='var(--border)';this.style.background='var(--bg-secondary)';"
+              ondrop="handleVoiceDrop(event);this.style.borderColor='var(--border)';this.style.background='var(--bg-secondary)';"
+              onclick="document.getElementById('voice-file-input').click()"
+              style="border:2px dashed var(--border);border-radius:8px;padding:20px;text-align:center;cursor:pointer;transition:all 0.2s;background:rgba(0,0,0,0.02);">
+              <div style="font-size:24px;margin-bottom:4px;">📦</div>
+              <div style="font-size:13px;color:var(--text-dim);">拖入语音文件或文件夹到这里<br><span style="font-size:11px;">（支持 .mp3 .wav .m4a，可多选）</span></div>
+              <input type="file" id="voice-file-input" accept=".mp3,.wav,.m4a,audio/*" multiple style="display:none" onchange="handleVoiceFiles(this.files)">
+            </div>
+
+            <!-- ★ 语音独立读回（与图片文件夹分离） -->
+            <div style="margin-top:10px;padding:10px;border:1px solid #3b82f6;border-radius:8px;background:rgba(59,130,246,0.05);">
+              <div style="font-size:12px;font-weight:600;color:#3b82f6;margin-bottom:4px;">🔊 语音读回（独立文件夹）</div>
+              <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;line-height:1.5;">
+                图片和语音在莫顿通常是<b>不同文件夹</b>。请把语音上传到单独文件夹，填其 ID 后点「读回语音」自动匹配 CDN。<br>
+                <span style="color:#94a3b8;">莫顿规则：反馈含音频时必须用「语音」类型（answerType=AUDIO），不能图文挂音频混搭。</span>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <input id="voice-folder-id" placeholder="语音素材库文件夹 ID" style="width:200px;padding:6px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg-input);color:var(--text);">
+                <button type="button" id="voice-readback-btn" onclick="voiceReadback()" style="font-size:13px;padding:6px 14px;border:1px solid #3b82f6;border-radius:4px;background:#3b82f6;color:#fff;cursor:pointer;">读回语音</button>
+              </div>
+              <div id="voice-readback-status" style="margin-top:6px;font-size:12px;color:var(--text-dim);"></div>
+            </div>
+
+            <!-- 识别结果预览 -->
+            <div id="voice-preview" style="display:none;margin-top:10px;">
+              <div style="font-size:12px;font-weight:600;margin-bottom:4px;">📋 识别结果</div>
+              <div id="voice-preview-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;"></div>
+              <div id="voice-unmatched-list" style="margin-top:6px;display:none;">
+                <div style="font-size:11px;color:#f59e0b;">⚠️ 未识别（需手动分配）：</div>
+                <div id="voice-unmatched-items" style="font-size:11px;color:var(--text-dim);max-height:80px;overflow-y:auto;"></div>
+              </div>
+              <div id="voice-match-summary" style="margin-top:6px;font-size:12px;color:var(--text-dim);"></div>
+              <div id="voice-actions" style="margin-top:8px;display:none;">
+                <button id="voice-upload-btn" type="button" onclick="uploadVoiceToMorton()" style="font-size:12px;padding:6px 14px;border:1px solid #22c55e;border-radius:4px;background:#16a34a;color:#fff;cursor:pointer;">⬆️ 尝试上传到莫顿</button>
+                <span style="font-size:11px;color:#94a3b8;margin-left:6px;">莫顿可能不支持 API 上传，失败请用下方手动流程</span>
+              </div>
+              <div id="voice-manual-guide" style="display:none;margin-top:8px;padding:8px;border-radius:6px;border:1px solid #f59e0b;background:rgba(245,158,11,0.08);font-size:12px;line-height:1.7;">
+                <b>📋 手动上传流程（已验证可用）：</b><br>
+                ① 打开莫顿素材库，把语音 mp3 上传到<b>单独的语音文件夹</b><br>
+                ② 在上方「🔊 语音读回」框填入该文件夹 ID → 点「读回语音」<br>
+                ③ 系统自动按文件名匹配 CDN → 直接生成 ✅
+              </div>
+            </div>
+
+            <!-- 读回后状态（CDN URL 已匹配时显示） -->
+            <div id="voice-cdn-status" style="display:none;margin-top:8px;padding:8px;border-radius:6px;border:1px solid #22c55e;background:rgba(34,197,94,0.06);">
+              <div style="font-size:12px;font-weight:600;color:#16a34a;">✅ 语音已就绪（CDN 已匹配）</div>
+              <div id="voice-cdn-details" style="font-size:11px;color:var(--text-dim);margin-top:4px;max-height:100px;overflow-y:auto;"></div>
+            </div>
+
+            <!-- 旧下拉框保留但默认隐藏（兜底用） -->
+            <details id="voice-manual-fallback" style="margin-top:8px;display:none;">
+              <summary style="font-size:11px;color:#94a3b8;cursor:pointer;">⚙️ 手动选择（自动匹配失败时展开）</summary>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;">
+                <div><label style="font-size:12px;">正反馈（答对）</label>
+                  <select id="voice-right" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-input);color:var(--text);"><option value="">— 未选择 —</option></select>
+                </div>
+                <div><label style="font-size:12px;">负反馈1（第1次错）</label>
+                  <select id="voice-wrong1" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-input);color:var(--text);"><option value="">— 未选择 —</option></select>
+                </div>
+                <div><label style="font-size:12px;">负反馈2（第2次错）</label>
+                  <select id="voice-wrong2" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-input);color:var(--text);"><option value="">— 未选择 —</option></select>
+                </div>
+                <div><label style="font-size:12px;">负反馈3（第3次错）</label>
+                  <select id="voice-wrong3" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-input);color:var(--text);"><option value="">— 未选择 —</option></select>
+                </div>
+              </div>
+            </details>
+          </div>
         </div>
 
         <!-- Import Excel -->
@@ -272,11 +387,12 @@
             <tbody id="preview-tbody"></tbody>
           </table>
         </div>
-        <div class="mt-16" style="display:flex;gap:8px;flex-wrap:wrap;">
+        <div class="mt-16" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
           <button class="btn btn-success" id="generate-btn" onclick="batchGenerate()">批量生成（已选）</button>
           <button class="btn btn-primary" id="generate-all-btn" onclick="batchGenerateAll()">全部生成</button>
           <button class="btn btn-outline" id="clear-one-btn" onclick="clearCurrent()">清空当前</button>
           <button class="btn btn-danger" id="clear-all-btn" onclick="clearAll()">清空全部</button>
+          <span id="voice-status-badge" style="display:none;margin-left:auto;font-size:13px;padding:6px 12px;border-radius:6px;background:rgba(255,255,255,0.03);border:1px solid var(--border);"></span>
         </div>
         <div id="generate-status" class="hidden mt-12"></div>
         <div id="progress-container" class="hidden">
@@ -607,15 +723,24 @@
 
         // 构建带下载按钮的 HTML
         let html = `<div style="font-weight:600;margin-bottom:6px;">✅ 提取完成！共 ${s.total} 题（选择题 ${s.choice}，填空题 ${s.fill}`;
+        if (s.unsupported > 0) html += `，连线题跳过 ${s.unsupported}`;
         if (s.images_downloaded > 0) html += `，图片 ${s.images_downloaded} 张`;
         html += `）</div>`;
 
+        // 告警汇总
+        if (s.warnings > 0) {
+          html += `<div style="margin:6px 0;padding:6px 10px;background:#fef3c7;border:1px solid #f59e0b;border-radius:4px;font-size:13px;">⚠️ 共 ${s.warnings} 条告警（缺答案/纯图题/不支持题型等），详见下方明细</div>`;
+        }
+
         // 题目明细
         if (s.items && s.items.length > 0) {
-          html += `<div style="font-size:14px;color:var(--text-dim);max-height:200px;overflow-y:auto;margin-bottom:10px;">`;
+          html += `<div style="font-size:14px;color:var(--text-dim);max-height:240px;overflow-y:auto;margin-bottom:10px;">`;
           s.items.forEach((item, i) => {
             const imgIcon = item['图片'] > 0 ? ' 🖼' : '';
-            html += `<div style="padding:2px 0;">${i+1}. [${item['题型']}] ${item['位置']} — ${item['题干']}（答案: ${item['答案']}）${imgIcon}</div>`;
+            const warnIcon = (item['告警'] && item['告警'].length > 0) ? ' ⚠️' : '';
+            const warnText = (item['告警'] && item['告警'].length > 0) ? ` title="${escapeHtml(item['告警'].join('; '))}"` : '';
+            const typeColor = item['题型'] === 'UNSUPPORTED' ? '#ef4444' : (item['题型'] === 'CHOICE' ? '#3b82f6' : '#a78bfa');
+            html += `<div style="padding:2px 0;"${warnText}>${i+1}. <span style="color:${typeColor};font-weight:600;">[${item['题型']}]</span> ${escapeHtml(item['位置'])} — ${escapeHtml(item['题干'])}（答案: ${escapeHtml(item['答案'])}）${imgIcon}${warnIcon}</div>`;
           });
           html += `</div>`;
         }
@@ -646,6 +771,1056 @@
         btn.disabled = false;
         btn.textContent = '转换';
       }
+    }
+
+    // ========== 莫顿素材库 URL 读回 ==========
+    let mortonMaterials = [];  // 读回的素材列表
+
+    // ========== 语音文件自动识别 v2 ==========
+    // 状态：拖入的本地语音文件（存 File 对象用于上传 + 文件名用于匹配 CDN）
+    let voiceLocalFiles = { right: null, wrong1: null, wrong2: null, wrong3: null };       // {name, file}
+    let voiceAllDroppedFiles = [];  // 所有拖入的音频文件（File 对象列表），用于批量上传
+    // 状态：读回后匹配到的 CDN URL
+    let voiceCdnUrls = { right: null, wrong1: null, wrong2: null, wrong3: null };
+
+    const VOICE_ROLE_LABELS = {
+      right: '正反馈（答对）',
+      wrong1: '负反馈1（第1次错）',
+      wrong2: '负反馈2（第2次错）',
+      wrong3: '负反馈3（第3次错）',
+    };
+
+    /**
+     * 根据文件名判断语音角色。
+     * 规则集（按优先级）：
+     *   关卡专属: _r（后跟.或结尾）→ right; _w_1 / _w_2 / _w_3 → wrong1~3; _tips* → 忽略(提示语)
+     *   通用: 含"正反馈"→right; 含"第N次错误/反馈"→wrongN
+     * 返回 'right' | 'wrong1' | 'wrong2' | 'wrong3' | null(未识别)
+     *
+     * 匹配策略（按优先级）：
+     *   规则1: 关卡专属格式 — _r / _w_N (N=1~3)
+     *         兼容 CDN 改名（可能加时间戳/前缀/后缀，但保留核心标识）
+     *   规则2: 通用中文命名 — 正反馈 / 第N次错误(反馈)
+     */
+    function classifyVoiceFile(filename) {
+      const name = filename.toLowerCase();
+      // 规则1a: 正反馈 — _r 后跟 . / _ / - / 数字 / 末尾 / 扩展名
+      if (/_r([._\-]|\d|\s|$)/.test(name) || /_r\.(mp3|wav|m4a|ogg|aac)/.test(name)) return 'right';
+      // 规则1b: 负反馈 — _w_N (N=1~3)
+      if (/_w[_\-]?1([._\-]|\d|\s|$|\.mp3|\.wav|\.m4a)/.test(name)) return 'wrong1';
+      if (/_w[_\-]?2([._\-]|\d|\s|$|\.mp3|\.wav|\.m4a)/.test(name)) return 'wrong2';
+      if (/_w[_\-]?3([._\-]|\d|\s|$|\.mp3|\.wav|\.m4a)/.test(name)) return 'wrong3';
+      // 规则2: 通用中文命名
+      if (/正反馈|答对[^的]|正确答案/.test(filename) && !/错误|不对|再想想/.test(filename)) return 'right';
+      if (/第\s*1[\s、\-]*次?[\s、]*(错误|反馈)/.test(filename)) return 'wrong1';
+      if (/第\s*2[\s、\-]*次?[\s、]*(错误|反馈)/.test(filename)) return 'wrong2';
+      if (/第\s*3[\s、\-]*次?[\s、]*(错误|反馈)/.test(filename)) return 'wrong3';
+      return null; // 未识别
+    }
+
+    /** 处理拖拽事件 */
+    function handleVoiceDrop(event) {
+      event.preventDefault();
+      const items = event.dataTransfer.items || [];
+      const files = [];
+      // 遍历 DataTransferItem（支持文件夹拖入）
+      for (const item of items) {
+        if (item.kind === 'file') {
+          const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+          if (entry && entry.isDirectory) {
+            // 递归读取文件夹
+            const dirFiles = readDirectorySync(entry);
+            files.push(...dirFiles.filter(f => /\.(mp3|wav|m4a)$/i.test(f.name)));
+          } else {
+            const file = item.getAsFile();
+            if (file && /\.(mp3|wav|m4a)$/i.test(file.name)) files.push(file);
+          }
+        }
+      }
+      handleVoiceFiles(files);
+    }
+
+    /** 异步版本（实际使用） */
+    async function readDirectoryAsync(dirEntry) {
+      const results = [];
+      const reader = dirEntry.createReader();
+      let entries = [];
+      // 循环直到 readEntries 返回空数组
+      do {
+        entries = await new Promise(resolve => reader.readEntries(resolve));
+        for (const entry of entries) {
+          if (entry.isFile) {
+            const file = await new Promise(resolve => entry.file(resolve));
+            results.push(file);
+          } else if (entry.isDirectory) {
+            const subFiles = await readDirectoryAsync(entry);
+            results.push(...subFiles);
+          }
+        }
+      } while (entries.length > 0);
+      return results;
+    }
+
+    async function handleVoiceDrop(event) {
+      event.preventDefault();
+      const dropZone = document.getElementById('voice-drop-zone');
+      dropZone.style.borderColor = 'var(--border)';
+      dropZone.style.background = 'var(--bg-secondary)';
+      const items = event.dataTransfer.items || [];
+      const allFiles = [];
+      for (const item of items) {
+        if (item.kind === 'file') {
+          const entry = item.webkitGetAsEntry && item.webkitGetAsEntry();
+          if (entry) {
+            if (entry.isDirectory) {
+              const dirFiles = await readDirectoryAsync(entry);
+              allFiles.push(...dirFiles);
+            } else {
+              const f = item.getAsFile();
+              if (f) allFiles.push(f);
+            }
+          } else {
+            const f = item.getAsFile();
+            if (f) allFiles.push(f);
+          }
+        }
+      }
+      await processVoiceFiles(allFiles);
+    }
+
+    /** 处理文件选择 input */
+    async function handleVoiceFiles(fileList) {
+      const files = Array.from(fileList || []);
+      await processVoiceFiles(files);
+    }
+
+    /** 核心：处理语音文件列表 → 分类 → 渲染预览 */
+    async function processVoiceFiles(files) {
+      const audioFiles = files.filter(f => /\.(mp3|wav|m4a)$/i.test(f.name));
+      if (audioFiles.length === 0) {
+        alert('未检测到音频文件（支持 .mp3 .wav .m4a）');
+        return;
+      }
+
+      // 分类
+      const classified = { right: [], wrong1: [], wrong2: [], wrong3: [], unknown: [] };
+      audioFiles.forEach(f => {
+        const role = classifyVoiceFile(f.name);
+        if (role) classified[role].push(f);
+        else classified.unknown.push(f);
+      });
+
+      // 每个角色取第一个（一套语音只需一个正反馈+三个负反馈）
+      voiceLocalFiles = {
+        right: classified.right[0] ? {name: classified.right[0].name, file: classified.right[0]} : null,
+        wrong1: classified.wrong1[0] ? {name: classified.wrong1[0].name, file: classified.wrong1[0]} : null,
+        wrong2: classified.wrong2[0] ? {name: classified.wrong2[0].name, file: classified.wrong2[0]} : null,
+        wrong3: classified.wrong3[0] ? {name: classified.wrong3[0].name, file: classified.wrong3[0]} : null,
+      };
+      // 保存所有文件用于批量上传
+      voiceAllDroppedFiles = audioFiles;
+
+      // 渲染预览
+      renderVoicePreview(classified);
+
+      // 存 localStorage（只存文件名，File 对象不可序列化）
+      try {
+        localStorage.setItem('qf_voice_local', JSON.stringify({
+          right: voiceLocalFiles.right ? voiceLocalFiles.right.name : null,
+          wrong1: voiceLocalFiles.wrong1 ? voiceLocalFiles.wrong1.name : null,
+          wrong2: voiceLocalFiles.wrong2 ? voiceLocalFiles.wrong2.name : null,
+          wrong3: voiceLocalFiles.wrong3 ? voiceLocalFiles.wrong3.name : null,
+        }));
+      } catch(e) {}
+
+      // 如果已有 CDN 读回数据，立即尝试匹配
+      if (mortonMaterials.length > 0) {
+        autoMatchVoiceToCdn();
+      }
+    }
+
+    /** 渲染识别结果预览面板 */
+    function renderVoicePreview(classified) {
+      const preview = document.getElementById('voice-preview');
+      const grid = document.getElementById('voice-preview-grid');
+      const unmatchedDiv = document.getElementById('voice-unmatched-list');
+      const unmatchedItems = document.getElementById('voice-unmatched-items');
+      const summary = document.getElementById('voice-match-summary');
+
+      preview.style.display = 'block';
+
+      // 4 个角色格子
+      let html = '';
+      ['right', 'wrong1', 'wrong2', 'wrong3'].forEach(role => {
+        const files = classified[role];
+        const has = files.length > 0;
+        html += `<div style="padding:8px;border-radius:6px;border:1px solid ${has ? '#22c55e' : '#ef444444'};background:${has ? 'rgba(34,197,94,0.06)' : 'rgba(239,68,68,0.04)'};">
+          <div style="font-size:11px;font-weight:600;color:${has ? '#16a34a' : '#dc2626'};">${VOICE_ROLE_LABELS[role]}</div>
+          ${has
+            ? files.map(f => `<div style="font-size:12px;color:var(--text);margin-top:2px;word-break:break-all;">🎵 ${escapeHtml(f.name)}</div>`).join('')
+            : `<div style="font-size:11px;color:#dc2626;margin-top:2px;">— 未识别到 —</div>`
+          }
+          ${files.length > 1 ? `<div style="font-size:10px;color:#f59e0b;margin-top:2px;">+${files.length-1} 个同名角色文件（使用第一个）</div>` : ''}
+        </div>`;
+      });
+      grid.innerHTML = html;
+
+      // 未识别列表
+      if (classified.unknown.length > 0) {
+        unmatchedDiv.style.display = 'block';
+        unmatchedItems.innerHTML = classified.unknown.map(f =>
+          `<span style="display:inline-block;background:rgba(245,158,11,0.08);border:1px solid #f59e0b44;padding:2px 6px;border-radius:4px;margin:2px;font-size:11px;">${escapeHtml(f.name)}</span>`
+        ).join('');
+      } else {
+        unmatchedDiv.style.display = 'none';
+      }
+
+      // 摘要
+      const total = Object.values(classified).flat().length;
+      const matched = total - classified.unknown.length;
+      summary.innerHTML = `共 ${total} 个音频 | ✅ 已识别 ${matched} 个 | ⚠️ 未识别 ${classified.unknown.length} 个`;
+
+      // 拖入识别后即显示操作区（含"尝试上传"按钮）和手动流程指引
+      const actions = document.getElementById('voice-actions');
+      const guide = document.getElementById('voice-manual-guide');
+      if (actions) actions.style.display = 'block';
+      if (guide) guide.style.display = 'block';
+      // 显示清除按钮
+      document.getElementById('voice-clear-btn').style.display = '';
+      // 更新语音状态指示器
+      updateVoiceStatusBadge();
+    }
+
+    /** 从素材库读回结果中筛出音频文件 + 自动匹配本地文件名→CDN URL */
+    function isAudioMaterial(m) {
+      const name = (m.name || '').toLowerCase();
+      const type = (m.type || '').toUpperCase();
+      return /\.(mp3|wav|m4a|ogg|aac|flac)$/.test(name) || /AUDIO|VOICE|MP3/.test(type);
+    }
+
+    /**
+     * 将音频列表匹配到 4 个语音角色（正反馈/负反馈1~3）。
+     * 匹配策略（按优先级）：
+     *   策略A（主）：直接对 CDN 文件名套用 classifyVoiceFile 分类。
+     *                莫顿上传后通常保留原文件名，故无需本地名与 CDN 名相等。
+     *   策略B（兜底）：用本地拖入文件名在 CDN 列表中做同名/包含匹配
+     *                （应对莫顿改名导致策略A失效的极端情况）。
+     * @param {Array|undefined} audioListOverride 可选：独立的音频素材列表（来自语音专属文件夹读回）。
+     *        不传则使用 mortonMaterials 中筛出的音频（图片读回附带的情况）。
+     */
+    function autoMatchVoiceToCdn(audioListOverride) {
+      const audioList = audioListOverride || (mortonMaterials || []).filter(isAudioMaterial);
+      if (audioList.length === 0) return;
+
+      // ★ 优化口径：manifest 策略优先用清单里的音频文件名（跳过 _r/_w_N 解析）
+      if (window.MATERIAL_BINDING.strategy === 'manifest' && window.MATERIAL_BINDING.manifest) {
+        const n = applyManifestAudioBindings(audioList);
+        renderCdnMatchStatus(n, 4);
+        try { localStorage.setItem('qf_voice_cdn', JSON.stringify(voiceCdnUrls)); } catch (e) {}
+        updateVoiceStatusBadge();
+        return n;
+      }
+
+      const roles = ['right', 'wrong1', 'wrong2', 'wrong3'];
+      const byRole = { right: [], wrong1: [], wrong2: [], wrong3: [] };
+
+      // 策略A：对 CDN 文件名直接分类（带调试日志）
+      console.log('[VOICE_MATCH] CDN 音频文件列表:');
+      audioList.forEach(m => {
+        const role = classifyVoiceFile(m.name);
+        console.log(`  [VOICE_MATCH] "${m.name}" → ${role || '❌ 未识别'}`);
+        if (role && byRole[role]) byRole[role].push(m);
+      });
+
+      // 策略B：本地文件名 → CDN 同名/包含匹配
+      roles.forEach(role => {
+        if (byRole[role].length > 0) return;
+        const localEntry = voiceLocalFiles[role];
+        const localName = localEntry ? localEntry.name : null;
+        if (!localName) return;
+        const lb = localName.replace(/\.[^.]+$/, '').toLowerCase();
+        const found = audioList.find(m => {
+          const cb = (m.name || '').replace(/\.[^.]+$/, '').toLowerCase();
+          return m.name === localName || lb === cb ||
+                 (m.name || '').toLowerCase().includes(lb) || cb.includes(lb);
+        });
+        if (found) {
+          byRole[role].push(found);
+          console.log(`[VOICE_MATCH] 策略B兜底: "${localName}" → ${role} (CDN名="${found.name}")`);
+        }
+      });
+
+      let matchCount = 0;
+      roles.forEach(role => {
+        const list = byRole[role];
+        if (list && list.length > 0) {
+          voiceCdnUrls[role] = list[0].url;
+          matchCount++;
+        } else if (!voiceCdnUrls[role]) {
+          voiceCdnUrls[role] = null;
+        }
+      });
+
+      // 渲染 CDN 匹配状态
+      renderCdnMatchStatus(matchCount, roles.length);
+
+      // 存 localStorage
+      try { localStorage.setItem('qf_voice_cdn', JSON.stringify(voiceCdnUrls)); } catch(e) {}
+
+      // 更新语音状态指示器
+      updateVoiceStatusBadge();
+      return matchCount;
+    }
+
+    function renderCdnMatchStatus(matched, total) {
+      const el = document.getElementById('voice-cdn-status');
+      const details = document.getElementById('voice-cdn-details');
+      el.style.display = 'block';
+
+      const roles = ['right', 'wrong1', 'wrong2', 'wrong3'];
+      if (matched === total) {
+        el.querySelector('div').textContent = '✅ 全部语音已匹配 CDN 地址（可直接生成）';
+        el.style.borderColor = '#22c55e';
+        el.style.background = 'rgba(34,197,94,0.06)';
+      } else {
+        el.querySelector('div').textContent = `⚠️ 部分语音已匹配 (${matched}/${total})，其余需手动分配`;
+        el.style.borderColor = '#f59e0b';
+        el.style.background = 'rgba(245,158,11,0.06)';
+        // 展开兜底下拉框
+        document.getElementById('voice-manual-fallback').style.display = '';
+      }
+
+      details.innerHTML = roles.map(role => {
+        const url = voiceCdnUrls[role];
+        const localEntry = voiceLocalFiles[role];
+        const local = localEntry ? localEntry.name : null;
+        if (url) {
+          return `<div style="color:#16a34a;">● ${VOICE_ROLE_LABELS[role]}: <span title="${url}">${local || '?'}</span> ✓</div>`;
+        } else if (local) {
+          return `<div style="color:#f59e0b;">● ${VOICE_ROLE_LABELS[role]}: <span>${local}</span> — CDN 中未找到</div>`;
+        }
+        return `<div style="color:#94a3b8;">● ${VOICE_ROLE_LABELS[role]}: —</div>`;
+      }).join('');
+
+      // 显示清除按钮 + 更新状态指示器
+      document.getElementById('voice-clear-btn').style.display = '';
+      updateVoiceStatusBadge();
+    }
+
+    /** 清除所有语音状态（本地文件识别 + CDN 匹配 + UI） */
+    function clearVoiceState() {
+      if (!confirm('确定要清除所有语音识别结果和 CDN 匹配吗？\n\n清除后需重新拖入语音文件并读回 CDN。')) return;
+      // 重置状态
+      voiceLocalFiles = { right: null, wrong1: null, wrong2: null, wrong3: null };
+      voiceAllDroppedFiles = [];
+      voiceCdnUrls = { right: null, wrong1: null, wrong2: null, wrong3: null };
+      // 清除 localStorage
+      try {
+        localStorage.removeItem('qf_voice_local');
+        localStorage.removeItem('qf_voice_cdn');
+      } catch(e) {}
+      // 隐藏 UI
+      document.getElementById('voice-preview').style.display = 'none';
+      document.getElementById('voice-cdn-status').style.display = 'none';
+      document.getElementById('voice-actions').style.display = 'none';
+      document.getElementById('voice-manual-guide').style.display = 'none';
+      document.getElementById('voice-manual-fallback').style.display = 'none';
+      document.getElementById('voice-readback-status').textContent = '';
+      document.getElementById('voice-clear-btn').style.display = 'none';
+      // 清除手动下拉框
+      ['voice-right', 'voice-wrong1', 'voice-wrong2', 'voice-wrong3'].forEach(id => {
+        const sel = document.getElementById(id);
+        if (sel) sel.innerHTML = '<option value="">— 未选择 —</option>';
+      });
+      // 更新语音状态指示器
+      updateVoiceStatusBadge();
+    }
+
+    /** 更新语音状态指示器（在生成按钮旁显示） */
+    function updateVoiceStatusBadge() {
+      const badge = document.getElementById('voice-status-badge');
+      if (!badge) return;
+      const roles = ['right', 'wrong1', 'wrong2', 'wrong3'];
+      const cdnMatched = roles.filter(r => voiceCdnUrls[r]).length;
+      const localMatched = roles.filter(r => voiceLocalFiles[r]).length;
+
+      if (cdnMatched === roles.length) {
+        badge.innerHTML = '<span style="color:#16a34a;">🎤 语音已就绪 (4/4)</span>';
+        badge.style.display = '';
+      } else if (cdnMatched > 0) {
+        badge.innerHTML = `<span style="color:#f59e0b;">🎤 语音部分就绪 (${cdnMatched}/4) — 生成将缺失部分语音</span>`;
+        badge.style.display = '';
+      } else if (localMatched > 0) {
+        badge.innerHTML = '<span style="color:#ef4444;">🎤 语音文件已识别但 CDN 未匹配 — 需读回 URL</span>';
+        badge.style.display = '';
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+
+    /** 一键上传所有拖入的语音文件到莫顿素材库 */
+    async function uploadVoiceToMorton() {
+      // 检查前置条件
+      if (!authToken || !authCookie) {
+        alert('请先在上方「莫顿登录」区域登录');
+        return;
+      }
+      // 上传语音优先用语音专属文件夹，回退到图片文件夹
+      const folderId = document.getElementById('voice-folder-id').value.trim()
+                    || document.getElementById('morton-folder-id').value.trim();
+      if (!folderId) {
+        alert('请填写语音素材库文件夹 ID（在「🔊 语音读回」框内）');
+        document.getElementById('voice-folder-id').focus();
+        return;
+      }
+
+      // ★ 收集有真实 File 对象的文件（刷新后 File 丢失则不含在内）
+      const roleOrder = ['right', 'wrong1', 'wrong2', 'wrong3'];
+      const filesToUpload = [];
+      for (const role of roleOrder) {
+        const entry = voiceLocalFiles[role];
+        if (!entry) continue;
+        const localName = typeof entry === 'string' ? entry : (entry.name || '');
+        let fileObj = (typeof entry === 'object' && entry instanceof File) ? entry
+                    : (typeof entry === 'object' && entry.file instanceof File) ? entry.file
+                    : voiceAllDroppedFiles.find(f => f.name === localName) || null;
+        if (localName && fileObj) {
+          filesToUpload.push({ file: fileObj, role, name: localName });
+        }
+      }
+
+      // ★ 稳定按钮引用（不再依赖 event 或动态 innerHTML）
+      const btn = document.getElementById('voice-upload-btn');
+      const summaryEl = document.getElementById('voice-match-summary');
+      const origText = btn ? btn.textContent : '⬆️ 尝试上传到莫顿';
+
+      // 场景：识别了角色但无真实 File 对象（刷新后丢失）→ 引导重新拖入或手动
+      if (filesToUpload.length === 0) {
+        const hasNames = roleOrder.some(r => voiceLocalFiles[r]);
+        if (hasNames) {
+          summaryEl.innerHTML += `<br><span style="color:#f59e0b;font-weight:600;display:block;margin-top:6px;padding:8px;background:rgba(245,158,11,0.1);border-radius:6px;">` +
+            `📋 文件引用已过期（页面刷新后 File 会丢失）<br>请重新把语音文件<b>拖入</b>上方区域，或走下方手动流程 → 点「🔍 读回 URL」</span>`;
+        } else {
+          alert('没有可上传的文件（请先拖入语音文件到上方区域）');
+        }
+        return;
+      }
+
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ 上传中…'; btn.style.opacity = '0.7'; }
+
+      // ★ 快速探测模式：先传正反馈 1 个文件，确认莫顿是否支持 API 上传
+      //   后端单文件最多 5s，探测失败立即返回手动指引，不再 4×3 地耗
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 25000);
+
+      async function uploadOne(f) {
+        const b64 = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result.split(',')[1]);
+          reader.onerror = reject;
+          reader.readAsDataURL(f.file);
+        });
+        const resp = await fetch('/api/feishu/morton-upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
+          body: JSON.stringify({
+            cookie: authCookie,
+            token: authToken,
+            folder_id: parseInt(folderId),
+            file_name: f.file.name,
+            file_data_b64: b64,
+          }),
+        });
+        return resp.json();
+      }
+
+      try {
+        const probe = filesToUpload.find(f => f.role === 'right') || filesToUpload[0];
+        const probeRes = await uploadOne(probe);
+
+        if (!probeRes.success) {
+          // 莫顿不支持 API 上传 → 立即引导手动流程，不再尝试其他文件
+          clearTimeout(timer);
+          summaryEl.innerHTML += `<br><span style="color:#f59e0b;font-weight:600;display:block;margin-top:6px;padding:8px;background:rgba(245,158,11,0.1);border-radius:6px;">` +
+            `⚠️ 莫顿暂不支持 API 自动上传（这是正常的）<br>` +
+            `📋 请用下方手动流程：① 把语音上传到莫顿素材库 → ② 点「🔍 读回 URL」→ ③ 自动匹配生成 ✅</span>`;
+          return;
+        }
+
+        // 探测成功 → 继续传其余文件
+        let successCount = 1;
+        for (const f of filesToUpload.filter(x => x !== probe)) {
+          const r = await uploadOne(f);
+          if (r.success) successCount++;
+        }
+        clearTimeout(timer);
+
+        summaryEl.innerHTML += `<br><span style="color:#16a34a;font-weight:600;">✅ ${successCount}/${filesToUpload.length} 个文件已上传，正在读回 CDN 地址...</span>`;
+        await mortonReadback();
+
+      } catch(e) {
+        clearTimeout(timer);
+        if (e.name === 'AbortError') {
+          summaryEl.innerHTML += `<br><span style="color:#f59e0b;font-weight:600;display:block;margin-top:6px;padding:8px;background:rgba(245,158,11,0.1);border-radius:6px;">` +
+            `⏰ 上传超时 — 莫顿可能不支持 API 上传<br>📋 请走下方手动流程：传素材库 → 点「读回 URL」→ 自动匹配</span>`;
+        } else {
+          alert('上传出错: ' + e.message);
+        }
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = origText; btn.style.opacity = '1'; }
+      }
+    }
+
+    function populateVoiceSelects() {
+      const audioList = (mortonMaterials || []).filter(isAudioMaterial);
+
+      // ★ 新逻辑：先尝试自动匹配
+      autoMatchVoiceToCdn();
+
+      // 兜底：填充下拉框（仅在需要手动选择时可见）
+      const slotIds = ['voice-right', 'voice-wrong1', 'voice-wrong2', 'voice-wrong3'];
+      slotIds.forEach(id => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        if (audioList.length === 0) {
+          sel.innerHTML = '<option value="">— 无音频素材 —</option>';
+        } else {
+          sel.innerHTML = '<option value="">— 未选择 —</option>' +
+            audioList.map(m => `<option value="${escapeHtml(m.url)}">${escapeHtml(m.name)}</option>`).join('');
+        }
+      });
+    }
+
+    /** 把 CDN 音频列表填入 4 个兜底下拉框，并展开面板，便于手动补选未匹配的角色 */
+    function populateVoiceManualOptions(audioList) {
+      const slotIds = ['voice-right', 'voice-wrong1', 'voice-wrong2', 'voice-wrong3'];
+      // 若下拉框还没渲染（details 默认隐藏但元素存在），直接填充
+      slotIds.forEach(id => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        sel.innerHTML = '<option value="">— 未选择 —</option>' +
+          audioList.map(m => `<option value="${escapeHtml(m.url)}">${escapeHtml(m.name)}</option>`).join('');
+      });
+      const fallback = document.getElementById('voice-manual-fallback');
+      if (fallback) fallback.style.display = '';
+    }
+
+    // 页面加载时恢复 localStorage 中的语音状态
+    (function restoreVoiceState() {
+      try {
+        const savedLocal = localStorage.getItem('qf_voice_local');
+        if (savedLocal) {
+          const parsed = JSON.parse(savedLocal);
+          // 兼容新旧格式：新格式是 {right:name, ...}，旧格式直接是名字
+          if (typeof parsed === 'object' && parsed.right !== undefined) {
+            voiceLocalFiles = {
+              right: parsed.right ? {name: parsed.right, file: null} : null,
+              wrong1: parsed.wrong1 ? {name: parsed.wrong1, file: null} : null,
+              wrong2: parsed.wrong2 ? {name: parsed.wrong2, file: null} : null,
+              wrong3: parsed.wrong3 ? {name: parsed.wrong3, file: null} : null,
+            };
+          }
+        }
+        const savedCdn = localStorage.getItem('qf_voice_cdn');
+        if (savedCdn) voiceCdnUrls = JSON.parse(savedCdn);
+        // 如果有保存的状态且有 CDN 数据，恢复显示
+        if (voiceLocalFiles.right || voiceLocalFiles.wrong1 ||
+            voiceLocalFiles.wrong2 || voiceLocalFiles.wrong3) {
+          // 重新渲染预览（用保存的数据构造 classified 结构）
+          const classified = {
+            right: voiceLocalFiles.right ? [{name: voiceLocalFiles.right.name}] : [],
+            wrong1: voiceLocalFiles.wrong1 ? [{name: voiceLocalFiles.wrong1.name}] : [],
+            wrong2: voiceLocalFiles.wrong2 ? [{name: voiceLocalFiles.wrong2.name}] : [],
+            wrong3: voiceLocalFiles.wrong3 ? [{name: voiceLocalFiles.wrong3.name}] : [],
+            unknown: []
+          };
+          renderVoicePreview(classified);
+        }
+        if (voiceCdnUrls.right || voiceCdnUrls.wrong1 ||
+            voiceCdnUrls.wrong2 || voiceCdnUrls.wrong3) {
+          const matched = [voiceCdnUrls.right, voiceCdnUrls.wrong1,
+                          voiceCdnUrls.wrong2, voiceCdnUrls.wrong3].filter(Boolean).length;
+          renderCdnMatchStatus(matched, 4);
+        }
+      } catch(e) {}
+      // 确保状态徽章在页面加载时正确显示
+      updateVoiceStatusBadge();
+    })();
+
+
+    async function mortonReadback() {
+      // 检查是否已登录莫顿
+      if (!authToken || !authCookie) {
+        alert('请先在上方「莫顿登录」区域登录，获取 Cookie 和 Token');
+        return;
+      }
+
+      const folderId = document.getElementById('morton-folder-id').value.trim();
+      if (!folderId) {
+        alert('请输入素材库文件夹 ID');
+        return;
+      }
+
+      const btn = document.getElementById('morton-readback-btn');
+      const status = document.getElementById('morton-readback-status');
+      btn.disabled = true;
+      btn.textContent = '读回中…';
+      status.className = 'status status-info';
+      status.textContent = '⏳ 正在从莫顿素材库读回 URL…';
+      status.classList.remove('hidden');
+
+      try {
+        const resp = await fetch('/api/feishu/morton-readback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cookie: authCookie,
+            token: authToken,
+            folder_id: parseInt(folderId),
+          }),
+        });
+        const data = await resp.json();
+
+        if (!data.success) {
+          status.className = 'status status-error';
+          status.textContent = '❌ ' + (data.error || '读回失败');
+          return;
+        }
+
+        mortonMaterials = data.materials || [];
+
+        // ★ 语音素材：筛出音频文件，填充语音反馈下拉框
+        populateVoiceSelects();
+
+        const anyQuestions = fileGroups.reduce((n, g) => n + (g.questions ? g.questions.length : 0), 0) > 0;
+
+        // —— 路径A：按文件名约定自动匹配（跨所有文件组）——
+        const auto = autoMatchMorton();
+        const autoCount = auto.matched.length;
+        const unmatchedMaterials = auto.unmatched;
+
+        // 构建 URL 列表展示（v3: 跨组匹配 + 手动面板含背景/选项角色）
+        let html = `<div style="font-weight:600;margin-bottom:6px;">✅ 读回 ${data.total} 个素材　|　自动匹配 <b style="color:#22c55e">${autoCount}</b> 个　|　待手动映射 <b style="color:#f59e0b">${unmatchedMaterials.length}</b> 个　<span style="font-size:10px;color:#888;">[v3]</span></div>`;
+        if (!anyQuestions) {
+          html += `<div style="font-size:12px;color:#fca5a5;margin-bottom:6px;">⚠️ 当前未加载任何题目（请先导入 Excel / 生成题目），图片已读回但不会匹配。加载题目后可重新点「读回 URL」。</div>`;
+        } else if (autoCount === 0) {
+          html += `<div style="font-size:12px;color:#fca5a5;margin-bottom:6px;">⚠️ 已加载题目但 0 自动匹配：请确认素材文件名是否按 <code>Q01-bg / Q01 / Q01-A</code> 规范命名，未匹配的图可在下方手动映射。</div>`;
+        }
+        html += `<div style="font-size:12px;color:var(--text-dim);max-height:160px;overflow-y:auto;">`;
+        html += `<table style="width:100%;border-collapse:collapse;font-size:12px;">`;
+        html += `<tr style="border-bottom:2px solid var(--border);"><th style="text-align:left;padding:4px;">文件名</th><th style="text-align:left;padding:4px;">URL（截断）</th><th style="text-align:left;padding:4px;">匹配</th></tr>`;
+        mortonMaterials.forEach(m => {
+          const urlShort = m.url.length > 46 ? m.url.substring(0, 46) + '...' : m.url;
+          const isAuto = auto.matched.indexOf(m) >= 0;
+          const tag = isAuto ? '<span style="color:#22c55e">✓自动</span>' : '<span style="color:#f59e0b">待手动</span>';
+          html += `<tr style="border-bottom:1px solid var(--border);"><td style="padding:3px 4px;">${escapeHtml(m.name)}</td><td style="padding:3px 4px;color:var(--text-dim);">${escapeHtml(urlShort)}</td><td style="padding:3px 4px;">${tag}</td></tr>`;
+        });
+        html += `</table></div>`;
+
+        status.className = 'status status-success';
+        status.innerHTML = html;
+
+        // 渲染手动映射面板（路径B 兜底）
+        renderManualPanel(unmatchedMaterials);
+
+        // 自动匹配已写入题目，刷新预览
+        renderPreview();
+      } catch (e) {
+        status.className = 'status status-error';
+        status.textContent = '❌ 请求失败: ' + e.message;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '读回 URL';
+      }
+    }
+
+    // ---------- 语音独立读回（与图片文件夹分离） ----------
+    async function voiceReadback() {
+      if (!authToken || !authCookie) {
+        alert('请先在上方「莫顿登录」区域登录，获取 Cookie 和 Token');
+        return;
+      }
+      const folderId = document.getElementById('voice-folder-id').value.trim();
+      if (!folderId) {
+        alert('请填写语音素材库文件夹 ID（与图片文件夹分开）');
+        document.getElementById('voice-folder-id').focus();
+        return;
+      }
+      const btn = document.getElementById('voice-readback-btn');
+      const status = document.getElementById('voice-readback-status');
+      btn.disabled = true;
+      btn.textContent = '读回中…';
+      status.style.color = 'var(--text-dim)';
+      status.textContent = '⏳ 正在从莫顿语音文件夹读回音频…';
+
+      try {
+        const resp = await fetch('/api/feishu/morton-readback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            cookie: authCookie,
+            token: authToken,
+            folder_id: parseInt(folderId),
+          }),
+        });
+        const data = await resp.json();
+        if (!data.success) {
+          status.style.color = '#ef4444';
+          status.textContent = '❌ ' + (data.error || '读回失败');
+          return;
+        }
+
+        const audioList = (data.materials || []).filter(isAudioMaterial);
+        if (audioList.length === 0) {
+          status.style.color = '#f59e0b';
+          status.textContent = `⚠️ 该文件夹未检测到音频（共读回 ${data.total} 个素材）。请确认语音已上传到此文件夹，而非图片文件夹。`;
+          return;
+        }
+
+        // 用独立音频列表匹配（不污染图片素材库 mortonMaterials）
+        autoMatchVoiceToCdn(audioList);
+        const matched = [voiceCdnUrls.right, voiceCdnUrls.wrong1,
+                         voiceCdnUrls.wrong2, voiceCdnUrls.wrong3].filter(Boolean).length;
+        // 未匹配满 4 个时，把 CDN 音频填入兜底下拉框，方便手动补选
+        if (matched < 4) populateVoiceManualOptions(audioList);
+        if (matched === 4) {
+          status.style.color = '#16a34a';
+          status.textContent = `✅ 读回 ${audioList.length} 个音频，4/4 角色全部匹配，可直接生成`;
+        } else {
+          status.style.color = '#f59e0b';
+          status.textContent = `✅ 读回 ${audioList.length} 个音频 | 自动匹配 ${matched}/4，未匹配的请在下方「手动选择」里指派`;
+        }
+      } catch (e) {
+        status.style.color = '#ef4444';
+        status.textContent = '❌ 请求失败: ' + e.message;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '读回语音';
+      }
+    }
+
+    // ---------- 图片匹配：路径A（文件名约定）+ 路径B（手动映射） ----------
+
+    // 解析素材文件名 → {qNum, role, optIndex}
+    // ════════════════════════════════════════════════════════════════════
+    //  文件名 → 题面解析（支持两套命名约定，返回 {qNum|qName, role, optIndex}）
+    //  约定A(旧/数字): Q03-bg(背景图) / Q03 或 Q03-stem(题目图) / Q03-A..H(选项图)
+    //  约定B(新/组课文档原名，推荐): 轻互动2-1 / 关卡题1-1 / 轻互动2-3 ...
+    //    → 文件名形如  轻互动2-1-bg.png / 轻互动2-1-A.png / 轻互动3-1.png
+    //    → 直接按「题目原名」匹配 q.name，彻底免去把 轻互动2-1 翻译成 Q0X 的人工步骤
+    //  注意: 不存在"答案图"——答案是图片时它就是某个选项图，靠 answer 字段标记正确选项。
+    // ════════════════════════════════════════════════════════════════════
+    function parseMortonName(name) {
+      const base = String(name).replace(/\.[^.]+$/, '');
+      // 约定A: Q03 / Q03-bg / Q03-A
+      const qm = base.match(/Q(\d+)(?:[_\-](bg|stem|q|opt|option|[A-H](?![A-Za-z])))?/i);
+      if (qm) {
+        const qNum = parseInt(qm[1], 10);
+        let role = qm[2] ? qm[2].toLowerCase() : 'stem';
+        let optIndex = null;
+        if (/^[a-h]$/.test(role)) { optIndex = role.toUpperCase().charCodeAt(0) - 65; role = 'opt'; }
+        else if (role === 'option') { role = 'opt'; }
+        else if (role === 'q') { role = 'stem'; }
+        return { qNum, qName: null, role, optIndex };
+      }
+      // 约定B: 组课文档原名 → 轻互动2-1 / 关卡题1-1 (-角色后缀)
+      const cm = base.match(/^(.*?)(\d+)[_\-](\d+)(?:[_\-](.+))?$/);
+      if (cm) {
+        const qName = (cm[1] + cm[2] + '-' + cm[3]).trim();   // 如 "轻互动2-1"
+        const rest = (cm[4] || '').toLowerCase();
+        let role = 'stem', optIndex = null;
+        if (rest === 'bg' || rest === '背景' || rest === 'background') { role = 'bg'; }
+        else if (/^[a-h]$/.test(rest)) { optIndex = rest.toUpperCase().charCodeAt(0) - 65; role = 'opt'; }
+        else if (rest.startsWith('opt') || rest.startsWith('option')) {
+          role = 'opt';
+          const mm = rest.match(/[a-h]/);
+          if (mm) optIndex = mm[0].toUpperCase().charCodeAt(0) - 65;
+        }
+        // 其余(无后缀 / 题 / 题干 / stem) → 题目图
+        return { qNum: null, qName, role, optIndex };
+      }
+      return null;
+    }
+
+    // 把一张图填入题目对象 q 的指定字段（bg / stem / opt[index]）
+    function fillQuestionTo(q, role, url, optIndex) {
+      if (!q) return false;
+      if (role === 'bg') {
+        if (!q.backgroundUrl) { q.backgroundUrl = url; return true; }
+      } else if (role === 'opt') {
+        if (!q.optionImages) q.optionImages = [];
+        if (!q.optionImages.some(o => o.index === optIndex)) {
+          q.optionImages.push({ index: optIndex, url });
+          return true;
+        }
+      } else {  // stem → 题目图
+        if (!q.questionImages) q.questionImages = [];
+        if (!q.questionImages.some(img => img.url === url)) {
+          q.questionImages.push({ url, width: 200, height: 150 });
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // 兼容旧调用：按「激活组内的题号」填入
+    function fillQuestionField(qi, role, url, optIndex) {
+      const q = getCurrentQuestions()[qi];
+      return fillQuestionTo(q, role, url, optIndex);
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    //  素材绑定架构（★ 优化口径 — 命名自动化扩展点）
+    // ════════════════════════════════════════════════════════════════════
+    //  设计目标：把「文件是什么」(intent) 与「文件去哪」(binding) 彻底解耦。
+    //  当前默认 strategy='filename'：靠人工按约定命名（Q03-bg / _w_3 等）+ 解析器识别。
+    //  未来 strategy='manifest'：由「组课文档→Excel」步骤顺带产出一份素材清单 JSON，
+    //    直接声明「每题的 背景图/题目图/各选项图/各反馈音频 用哪个文件」，
+    //    彻底免去「给文件起名去对应题目」的人工负担（命名自动化落点）。
+    //
+    //  MATERIAL_BINDING.manifest 数据结构（未来自动化必须产出的契约）：
+    //  {
+    //    "questions": [
+    //      {
+    //        "id": "轻互动1-1",          // 对应题目 q.name（组课文档原名即可，无需改名）
+    //        "background": "bg1.png",       // 文件名（在莫顿素材库读回结果里按名解析为 URL）
+    //        "stem": "stem1.png",
+    //        "options": { "A": "optA.png", "C": "optC.png" },  // 选项图按字母
+    //        "feedback": { "right": "right1.mp3", "wrong": [ {"minWrong":3,"audio":"wq3_1.mp3"} ] }
+    //      }
+    //    ],
+    //    // 也可在顶层放一份「共享4角色音频」（当前默认模型，一套语音复用于全部题）：
+    //    "feedback": { "right": "right.mp3", "wrong": [ {"minWrong":3,"audio":"wq3.mp3"} ] }
+    //    // TODO(PER_QUESTION_AUDIO): 若每个 question 自带 feedback（每题各自音频），
+    //    //   会写入 window.questionAudioMap[q.name]，待后端 materials_manifest 消费。
+    //  }
+    window.MATERIAL_BINDING = {
+      strategy: 'filename',   // 'filename' | 'manifest'
+      manifest: null,         // loadMaterialManifest() 填充
+    };
+    window.questionAudioMap = {};  // 每题各自音频（per-question audio，未来用）
+
+    // 由未来「组课文档→Excel」管线调用；现在也可手动「📋 导入素材清单(JSON)」。
+    function loadMaterialManifest(input) {
+      let data;
+      try { data = typeof input === 'string' ? JSON.parse(input) : input; }
+      catch (e) { alert('素材清单 JSON 解析失败: ' + e.message); return false; }
+      if (!data || !Array.isArray(data.questions)) { alert('素材清单格式错误：缺少 questions 数组'); return false; }
+      window.MATERIAL_BINDING.manifest = data;
+      window.MATERIAL_BINDING.strategy = 'manifest';
+      console.log('[MATERIAL_BINDING] 已载入素材清单，共', data.questions.length, '题，切换为 manifest 策略。');
+      return true;
+    }
+
+    // 按文件名在素材库读回结果里找 URL（manifest 引用文件名 → 解析为 CDN URL）
+    function resolveMaterialUrlByName(name) {
+      if (!name) return null;
+      const base = String(name).replace(/\.[^.]+$/, '');
+      const hit = (mortonMaterials || []).find(m => (m.name || '').replace(/\.[^.]+$/, '') === base);
+      return hit ? hit.url : null;
+    }
+    function resolveAudioUrlByName(name, audioList) {
+      if (!name) return null;
+      const list = audioList || (mortonMaterials || []).filter(isAudioMaterial);
+      const base = String(name).replace(/\.[^.]+$/, '');
+      const hit = list.find(m => (m.name || '').replace(/\.[^.]+$/, '') === base);
+      return hit ? hit.url : null;
+    }
+
+    // 按 q.name 跨文件组找题目
+    function findQuestionByName(name) {
+      for (const g of (fileGroups || [])) {
+        const q = (g.questions || []).find(x => (x.name || '') === name);
+        if (q) return q;
+      }
+      return null;
+    }
+
+    // manifest 图片绑定（替代文件名解析）。返回绑定成功项数。
+    function applyManifestImageBindings() {
+      const manifest = window.MATERIAL_BINDING.manifest;
+      if (!manifest) return 0;
+      let count = 0;
+      (manifest.questions || []).forEach(entry => {
+        const q = findQuestionByName(entry.id);
+        if (!q) { console.log('[MANIFEST] 找不到题目', entry.id); return; }
+        if (entry.background) { const u = resolveMaterialUrlByName(entry.background); if (u && fillQuestionTo(q, 'bg', u, null)) count++; }
+        if (entry.stem)       { const u = resolveMaterialUrlByName(entry.stem);       if (u && fillQuestionTo(q, 'stem', u, null)) count++; }
+        if (entry.options) Object.entries(entry.options).forEach(([label, fname]) => {
+          const idx = label.toUpperCase().charCodeAt(0) - 65;
+          const u = resolveMaterialUrlByName(fname);
+          if (u && idx >= 0 && fillQuestionTo(q, 'opt', u, idx)) count++;
+        });
+        // per-question 音频（未来）：暂存，待后端 materials_manifest 消费
+        if (entry.feedback) window.questionAudioMap[entry.id] = entry.feedback;
+      });
+      console.log('[MANIFEST] 图片绑定完成，共', count, '项');
+      return count;
+    }
+
+    // manifest 音频绑定。返回成功匹配的角色数（共享4角色模型 → voiceCdnUrls）。
+    function applyManifestAudioBindings(audioList) {
+      const manifest = window.MATERIAL_BINDING.manifest;
+      if (!manifest) return 0;
+      let count = 0;
+      const fb = manifest.feedback;  // 顶层共享音频（当前默认模型）
+      if (fb) {
+        if (fb.right) { const u = resolveAudioUrlByName(fb.right, audioList); if (u) { voiceCdnUrls.right = u; count++; } }
+        (fb.wrong || []).forEach(w => {
+          const role = 'wrong' + (w.minWrong || 3);
+          const u = resolveAudioUrlByName(w.audio, audioList);
+          if (u && voiceCdnUrls[role] !== undefined) { voiceCdnUrls[role] = u; count++; }
+        });
+      }
+      console.log('[MANIFEST] 音频绑定完成，共', count, '角色');
+      return count;
+    }
+
+    // 手动导入素材清单 JSON（UI 按钮触发）
+    function importMaterialManifest() {
+      const inp = document.getElementById('manifest-file');
+      if (!inp || !inp.files || !inp.files[0]) { alert('请先选择素材清单 JSON 文件'); return; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (!loadMaterialManifest(reader.result)) return;
+        if ((mortonMaterials || []).length) autoMatchMorton();
+        if ((mortonMaterials || []).filter(isAudioMaterial).length) autoMatchVoiceToCdn();
+        alert('✅ 素材清单已导入，已按清单重新绑定图片与音频。可在浏览器控制台查看 [MANIFEST] 日志。');
+      };
+      reader.readAsText(inp.files[0]);
+    }
+
+    // 路径A：按文件名自动匹配（优先在激活文件组内匹配，避免跨组串题）
+    // 返回 {matched, unmatched}
+    function autoMatchMorton() {
+      // ★ 优化口径：manifest 策略下直接按素材清单绑定，跳过文件名解析
+      if (window.MATERIAL_BINDING.strategy === 'manifest' && window.MATERIAL_BINDING.manifest) {
+        applyManifestImageBindings();
+        return { matched: [], unmatched: [] };
+      }
+      const matched = [];
+      const unmatched = [];
+      const activeGroup = fileGroups[activeFileIndex];
+      console.log('[autoMatchMorton] 开始匹配，素材数:', mortonMaterials.length,
+                  '文件组数:', fileGroups.length, '激活组:', activeGroup ? activeGroup.filename : '无');
+      console.log('[autoMatchMorton] 各组题目数:', fileGroups.map((g, i) =>
+        `组${i}(${g.filename}):${(g.questions||[]).length}题${i===activeFileIndex?' ★':''}`).join(' | '));
+
+      mortonMaterials.forEach((m, mi) => {
+        const p = parseMortonName(m.name);
+        if (!p) { console.log(`  [${mi}] ${m.name} → 文件名不匹配`); unmatched.push(m); return; }
+
+        // ★ 约定B: 按「题目原名」(轻互动2-1) 直接匹配，跨组唯一、零编号翻译误差
+        if (p.qName) {
+          const q = findQuestionByName(p.qName);
+          console.log(`  [${mi}] "${m.name}" → 名称匹配 qName="${p.qName}" role=${p.role} optIndex=${p.optIndex} 命中=${q ? '是' : '否'}`);
+          if (q) {
+            const result = fillQuestionTo(q, p.role, m.url, p.optIndex);
+            console.log(`    → fillQuestionTo=${result}`);
+            if (result) matched.push(m); else unmatched.push(m);
+          } else {
+            console.log(`    → ❌ 找不到名为 "${p.qName}" 的题目`);
+            unmatched.push(m);
+          }
+          return;
+        }
+
+        // ★ 约定A: 数字编号 Q03（保持兼容），优先激活组避免跨组串题
+        const qi = p.qNum - 1;
+        console.log(`  [${mi}] "${m.name}" → qNum=${p.qNum} qi=${qi} role=${p.role} optIndex=${p.optIndex}`);
+
+        // ★ 先尝试激活文件组（避免跨组串题）
+        let placed = false;
+        if (activeGroup) {
+          const qs = activeGroup.questions || [];
+          if (qi >= 0 && qi < qs.length) {
+            const result = fillQuestionTo(qs[qi], p.role, m.url, p.optIndex);
+            console.log(`    → 激活组"${activeGroup.filename}" qs[${qi}] fillQuestionTo=${result}`);
+            if (result) { matched.push(m); placed = true; }
+          } else {
+            console.log(`    → 激活组跳过(qi=${qi}, 题数=${qs.length})`);
+          }
+        }
+
+        // 激活组未命中 → 再搜索其他组（向后兼容单组场景）
+        if (!placed) {
+          for (let gi = 0; gi < fileGroups.length; gi++) {
+            if (gi === activeFileIndex) continue;
+            const group = fileGroups[gi];
+            const qs = group.questions || [];
+            if (qi >= 0 && qi < qs.length) {
+              const result = fillQuestionTo(qs[qi], p.role, m.url, p.optIndex);
+              console.log(`    → ⚠️ 跨组匹配: 组"${group.filename}" qs[${qi}] fillQuestionTo=${result}`);
+              if (result) { matched.push(m); placed = true; break; }
+            }
+          }
+        }
+
+        if (!placed) { console.log(`  [${mi}] "${m.name}" → ❌ 未放置（所有组均无 Q${p.qNum}）`); unmatched.push(m); }
+      });
+      console.log('[autoMatchMorton] 结果:', matched.length, 'matched,', unmatched.length, 'unmatched');
+      return { matched, unmatched };
+    }
+
+    // 待手动映射的素材（全局，applyManualMapping 后重渲染）
+    let currentUnmatched = [];
+
+    function renderManualPanel(materials) {
+      currentUnmatched = materials.slice();
+      const panel = document.getElementById('morton-manual-panel');
+      if (!currentUnmatched.length) {
+        panel.classList.add('hidden');
+        panel.innerHTML = '';
+        return;
+      }
+      let html = `<div style="font-weight:600;font-size:13px;margin-bottom:4px;">🖐 手动映射（${currentUnmatched.length} 张无名图）<span style="font-size:10px;color:#888;margin-left:4px;">[v3]</span></div>`;
+      html += `<div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">角色可选：背景图 / 题目图 / 选项A~F。选好后点「添加」即回填。</div>`;
+      html += `<div style="max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">`;
+      currentUnmatched.forEach((m, idx) => {
+        const thumb = m.url ? `<img src="${m.url}" style="width:46px;height:46px;object-fit:cover;border-radius:4px;border:1px solid var(--border);" onerror="this.style.display='none'">` : '🖼';
+        const opts = fileGroups.map((g, gi) => (g.questions || []).map((q, i) => `<option value="${gi}:${i}">${escapeHtml(g.filename)} · 第${i + 1}题${q.name ? '·' + escapeHtml(q.name) : ''}</option>`).join('')).join('');
+        html += `<div style="display:flex;gap:8px;align-items:center;padding:6px 8px;border-bottom:1px solid var(--border);">
+          ${thumb}
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:12px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(m.name)}</div>
+            <div style="font-size:10px;color:var(--text-dim);">${escapeHtml(m.url.length > 38 ? m.url.substring(0, 38) + '…' : m.url)}</div>
+          </div>
+          <select id="mp-q-${idx}" style="font-size:12px;padding:3px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg-input);color:var(--text);max-width:120px;">${opts}</select>
+          <select id="mp-r-${idx}" style="font-size:12px;padding:3px 4px;border:1px solid var(--border);border-radius:4px;background:var(--bg-input);color:var(--text);">
+            <option value="bg">背景图</option>
+            <option value="stem" selected>题目图</option>
+            <option value="optA">选项A</option>
+            <option value="optB">选项B</option>
+            <option value="optC">选项C</option>
+            <option value="optD">选项D</option>
+            <option value="optE">选项E</option>
+            <option value="optF">选项F</option>
+          </select>
+          <button class="btn btn-primary" style="font-size:12px;padding:3px 10px;white-space:nowrap;" onclick="applyManualMapping(${idx})">添加</button>
+        </div>`;
+      });
+      html += `</div>`;
+      panel.classList.remove('hidden');
+      panel.innerHTML = html;
+    }
+
+    function applyManualMapping(idx) {
+      const m = currentUnmatched[idx];
+      if (!m) return;
+      const val = document.getElementById(`mp-q-${idx}`).value; // "groupIdx:questionIdx"
+      const [gi, qi] = val.split(':').map(Number);
+      const roleSel = document.getElementById(`mp-r-${idx}`).value;
+      let role = 'stem', optIndex = null;
+      if (roleSel.indexOf('opt') === 0) { role = 'opt'; optIndex = roleSel.charCodeAt(3) - 65; }
+      else if (roleSel === 'bg') role = 'bg';
+      else role = 'stem';
+      const group = fileGroups[gi];
+      const q = group ? group.questions[qi] : null;
+      fillQuestionTo(q, role, m.url, optIndex);
+      currentUnmatched.splice(idx, 1);
+      renderManualPanel(currentUnmatched);
+      renderPreview();
     }
 
     async function loadGeneratedExcel(filePath, filename) {
@@ -735,8 +1910,7 @@
             fileGroups.push(ng);
           }
         }
-        activeFileIndex = fileGroups.length - newGroups.length; // 默认显示第一个新文件
-        if (activeFileIndex < 0) activeFileIndex = 0;
+        activeFileIndex = Math.max(0, fileGroups.length - 1); // 默认显示最后一个加载的文件组（始终有效）
         showStatus('upload-status', 'success', `✅ 已解析 ${totalParsed} 道题（${newGroups.length} 个文件）`);
         renderTabs();
         renderPreview();
@@ -872,7 +2046,7 @@
           <td style="font-size:11px">${GRADE_NAMES[String(q.grade)] || (q.grade ? q.grade : '未设置')}</td>
           <td style="font-size:11px">${STAGE_NAMES[String(q.stage)] || (q.stage ? q.stage : '未设置')}</td>
           <td style="font-size:11px">${q.difficulty || '未设置'}</td>
-          <td style="font-size:11px">${(q.questionImages && q.questionImages.length) ? `<span style="color:#f59e0b" title="${escapeHtml(q.questionImages.map(img => img.url).join('\n'))}">📷 ${q.questionImages.length}张</span>` : '<span style="color:#475569">—</span>'}</td>
+          <td style="font-size:11px">${(q.questionImages && q.questionImages.length) ? `<span style="color:#f59e0b" title="${escapeHtml(q.questionImages.map(img => img.url).join('\n'))}">📷 ${q.questionImages.length}张</span>` : '<span style="color:#475569">—</span>'}${(q.optionImages && q.optionImages.length) ? ` <span style="color:#38bdf8" title="${escapeHtml(q.optionImages.map(o => (o.index!=null?'选项'+(String.fromCharCode(65+o.index))+': ':'')+o.url).join('\n'))}">🔘 ${q.optionImages.length}选项图</span>` : ''}</td>
           <td style="font-size:11px">${q.backgroundUrl ? `<span style="color:#22c55e" title="${escapeHtml(q.backgroundUrl)}">🖼 已设置</span>` : '<span style="color:#475569">—</span>'}</td>
           <td>${fbStatus}</td>
           <td>${genResult}</td>
@@ -1013,6 +2187,38 @@
         // 检测失败不阻止生成
       }
 
+      // ★ 语音状态前置检查：如果已识别本地文件但 CDN 未全匹配，提醒用户
+      const roles = ['right', 'wrong1', 'wrong2', 'wrong3'];
+      const hasLocalVoice = roles.some(r => voiceLocalFiles[r]);
+      const cdnMatched = roles.filter(r => voiceCdnUrls[r]).length;
+      const localMatched = roles.filter(r => voiceLocalFiles[r]).length;
+      if (hasLocalVoice && cdnMatched < localMatched) {
+        const missing = roles.filter(r => voiceLocalFiles[r] && !voiceCdnUrls[r])
+          .map(r => VOICE_ROLE_LABELS[r]);
+        if (cdnMatched === 0) {
+          if (!confirm(
+            '⚠️ 已识别到语音文件但尚未匹配 CDN 地址（' + missing.join('、') + '）。\n\n' +
+            '生成后的题目将**不含语音反馈**。\n\n' +
+            '如需带语音，请先：\n' +
+            '  ① 点「⬆️ 一键上传到莫顿素材库」，或手动上传后点「读回 URL」\n' +
+            '  ② 确认显示"✅ 全部语音已匹配"\n\n' +
+            '是否继续生成（无语音）？'
+          )) {
+            return; // 用户取消
+          }
+        } else {
+          if (!confirm(
+            '⚠️ 语音 CDN 部分未匹配（已匹配 ' + cdnMatched + '/' + localMatched + '）。\n\n' +
+            '缺失的角色：' + missing.join('、') + '\n\n' +
+            '生成后这些角色的反馈将回退为文字（无音频）。\n\n' +
+            '建议：在「🔊 语音反馈素材 → ⚙️ 手动选择」中补选。\n\n' +
+            '是否继续生成？'
+          )) {
+            return;
+          }
+        }
+      }
+
       const btn = document.getElementById('generate-btn');
       btn.disabled = true;
       btn.textContent = '生成中...';
@@ -1028,6 +2234,15 @@
 
       try {
         const defaults = getGenerationDefaults();
+
+        // ★ 诊断：打印每道题发送前的图片字段
+        console.log('[GEN_DEBUG] 准备发送', questions.length, '道题:');
+        questions.forEach((q, i) => {
+          const optImgs = q.optionImages || [];
+          const qImgs = q.questionImages || [];
+          console.log(`  题目[${i}] name="${q.name}" optionImages=${optImgs.length}个[${optImgs.map(o => 'idx='+o.index+':'+o.url.slice(0,30)).join(', ')}], questionImages=${qImgs.length}个, backgroundUrl=${q.backgroundUrl ? '有' : '无'}`);
+        });
+        console.log('[GEN_DEBUG] fileGroups 总数:', fileGroups.length, 'activeFileIndex:', activeFileIndex);
 
         const resp = await fetch('/api/question/batch-create-stream', {
           method: 'POST',
@@ -1512,6 +2727,8 @@
       const bgUrl = normalizeAssetUrl(questionData.webBgmUrl || questionData.webUrl || questionData.backgroundUrl || questionData.bgUrl || '');
       if (bgUrl) canvas.style.backgroundImage = `url("${bgUrl}")`;
       else canvas.style.backgroundImage = 'none';
+      // ★ 规则护栏：题目有背景图时不再渲染题干文本/contexts（与生成端一致，所见即所得）
+      const hasBg = !!bgUrl;
 
       const topbar = document.createElement('div');
       topbar.className = 'preview-editor-topbar';
@@ -1571,27 +2788,29 @@
       titleEl.style.top = (84 * scale) + 'px';
       titleEl.style.width = (900 * scale) + 'px';
       titleEl.style.fontSize = (24 * scale) + 'px';
-      canvas.appendChild(titleEl);
+      if (!hasBg) canvas.appendChild(titleEl);
 
-      const contexts = questionData.contexts || [];
-      contexts.forEach(ctx => {
-        const pos = ctx.coordinate || { x: 0, y: 0 };
-        const textEl = document.createElement('div');
-        textEl.className = 'preview-canvas-text';
-        textEl.textContent = ctx.content || '';
-        const rawX = mapXRaw(pos.x);
-        const rawY = mapYRaw(pos.y);
-        const fontSize = ctx.size || 40;
-        const rawWidth = Math.max(40, (ctx.displayBoxWeight || 970) * boxScaleX);
-        textEl.style.left = (rawX * scale) + 'px';
-        textEl.style.top = (rawY * scale) + 'px';
-        textEl.style.width = (rawWidth * scale) + 'px';
-        textEl.style.maxWidth = (rawWidth * scale) + 'px';
-        textEl.style.textAlign = ctx.textAlign || 'center';
-        textEl.style.fontSize = (fontSize * scale) + 'px';
-        textEl.style.color = ctx.rgb || PREVIEW_RGB;
-        canvas.appendChild(textEl);
-      });
+      if (!hasBg) {
+        const contexts = questionData.contexts || [];
+        contexts.forEach(ctx => {
+          const pos = ctx.coordinate || { x: 0, y: 0 };
+          const textEl = document.createElement('div');
+          textEl.className = 'preview-canvas-text';
+          textEl.textContent = ctx.content || '';
+          const rawX = mapXRaw(pos.x);
+          const rawY = mapYRaw(pos.y);
+          const fontSize = ctx.size || 40;
+          const rawWidth = Math.max(40, (ctx.displayBoxWeight || 970) * boxScaleX);
+          textEl.style.left = (rawX * scale) + 'px';
+          textEl.style.top = (rawY * scale) + 'px';
+          textEl.style.width = (rawWidth * scale) + 'px';
+          textEl.style.maxWidth = (rawWidth * scale) + 'px';
+          textEl.style.textAlign = ctx.textAlign || 'center';
+          textEl.style.fontSize = (fontSize * scale) + 'px';
+          textEl.style.color = ctx.rgb || PREVIEW_RGB;
+          canvas.appendChild(textEl);
+        });
+      }
 
       // 题目图片渲染（莫顿字段: pictures[].{webPictureUrl,coordinate,scaleValue}）
       const pictures = questionData.pictures || questionData.questionImages || [];
@@ -1746,7 +2965,29 @@
           imageUrl: document.getElementById('default-cond-img').value.trim(),
           audioUrl: document.getElementById('default-cond-audio').value.trim(),
         },
+        // ★ 通用语音反馈（一套复用于全部题目）
+        defaultVoiceFeedback: getVoiceFeedbackConfig(),
       };
+    }
+
+    // 读取语音 CDN 匹配结果（优先自动匹配，缺的角色再从手动下拉框补）
+    function getVoiceFeedbackConfig() {
+      const cdn = voiceCdnUrls || {};
+      const vf = {};
+      let any = false;
+      const slotIds = ['voice-right', 'voice-wrong1', 'voice-wrong2', 'voice-wrong3'];
+      const keys = ['right', 'wrong1', 'wrong2', 'wrong3'];
+      // 1) 优先用自动匹配的 CDN URL
+      keys.forEach(k => { if (cdn[k]) { vf[k] = cdn[k]; any = true; } });
+      // 2) 自动未覆盖的角色，从手动下拉框补
+      slotIds.forEach((id, i) => {
+        const k = keys[i];
+        if (vf[k]) return;
+        const sel = document.getElementById(id);
+        const val = sel ? sel.value.trim() : '';
+        if (val) { vf[k] = val; any = true; }
+      });
+      return any ? vf : null;
     }
 
     function buildPreviewSignature(q, defaults) {

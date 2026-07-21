@@ -88,6 +88,15 @@ class BatchRequest(BaseModel):
     defaultQuestionImages: str = ""
     defaultBackgroundUrl: str = ""
     defaultConditionFeedback: Optional[ConditionFeedback] = None
+    # ★ 通用语音反馈（一套复用于全部题目）：{right, wrong1, wrong2, wrong3} = 莫顿CDN音频URL
+    # 有语音时反馈强制 answerType="AUDIO"（莫顿规则：有音频不能混搭图文），无语音则回退文字
+    defaultVoiceFeedback: Optional[Dict[str, str]] = None
+    # ═══ 优化口径（命名自动化 / 每题各自音频）═══
+    # 未来「组课文档→Excel」步骤若能做到「每题各自的反馈音频」，把素材清单（manifest）
+    # 一并传上来，结构为：
+    #   { "audioMap": { "<题目id/name>": {"right": url, "wrong":[{"minWrong":N,"audio":url}]} } }
+    # 此处仅声明字段占位，不改动当前行为。消费点在 _apply_defaults 见 TODO(PER_QUESTION_AUDIO)。
+    materials_manifest: Optional[Dict[str, Any]] = None
 
 
 class PreviewCreateRequest(BaseModel):
@@ -110,6 +119,9 @@ class PreviewCreateRequest(BaseModel):
     defaultQuestionImages: str = ""
     defaultBackgroundUrl: str = ""
     defaultConditionFeedback: Optional[ConditionFeedback] = None
+    # ★ 通用语音反馈（一套复用于全部题目）：{right, wrong1, wrong2, wrong3} = 莫顿CDN音频URL
+    # 有语音时反馈强制 answerType="AUDIO"（莫顿规则：有音频不能混搭图文），无语音则回退文字
+    defaultVoiceFeedback: Optional[Dict[str, str]] = None
 
 
 class PreviewPayloadRequest(BaseModel):
@@ -131,6 +143,79 @@ class PreviewPayloadRequest(BaseModel):
     defaultQuestionImages: str = ""
     defaultBackgroundUrl: str = ""
     defaultConditionFeedback: Optional[ConditionFeedback] = None
+
+
+# ============================================================
+#  语音反馈工具函数
+#  莫顿规则（实测 26018 正常题）：反馈含音频时必须用 answerType="AUDIO"
+#  且音频地址放 webUrl 字段（webAudioUrl 反而为 null），不能 PICTURE_CONTENT(图文)
+#  里再挂音频（非法混搭 → 渲染器"加载配置失败"）。
+#  故策略：有语音 → 纯 AUDIO(webUrl=mp3, 无 content)；无语音 → 回退文字。
+# ============================================================
+
+# 负反馈文案回退（仅当对应语音缺失时使用）
+_FALLBACK_WRONG = [
+    "用一一对应的方法来比较它们的多少吧！",
+    "一一对应以后，有剩余的小动物数量多！",
+    "好可惜啊，不过没关系，等所有关卡结束后，再来试一试吧！",
+]
+_FALLBACK_RIGHT = "恭喜你，回答正确~"
+
+
+def _clean_feedback_label(text: str) -> str:
+    """清洗反馈内容中的标签前缀，如「负反馈3：」「第3次错误反馈」等。"""
+    import re as _re
+    t = text.strip()
+    # 去掉 "负反馈N：" / "负反馈N—" / "第N次错误(反馈)?[：:]\s*"
+    t = _re.sub(r'^(负反馈\s*\d+[\s：:—\-]+|(第\s*\d+\s*次?\s*(错误|反馈)[\s：:—\-]+))', '', t).strip()
+    # 去掉末尾残留标点
+    t = t.rstrip('：:—- ')
+    return t
+
+
+def _audio_fb(url: str, variable_value: Optional[str] = None) -> Dict[str, Any]:
+    """构造一个纯音频反馈对象（莫顿 AUDIO 类型）。"""
+    fb: Dict[str, Any] = {
+        "webUrl": url,
+        "webName": url.rsplit("/", 1)[-1] if "/" in url else url,
+        "webAudioUrl": None,
+        "logicTypeList": [],
+        "logicExpressList": [],
+        "answerType": "AUDIO",
+    }
+    if variable_value:
+        n = int(variable_value.split(",")[0])
+        fb["webListenList"] = [{
+            "variableKey": "WrongNumber",
+            "variableType": "int",
+            "compare": "EQUAL",
+            "value": n,
+            "variableValue": variable_value,
+        }]
+    else:
+        fb["webListenList"] = []
+    return fb
+
+
+def _wrong_fb(audio_url: str, variable_value: str, idx: int) -> Dict[str, Any]:
+    """第 idx 次错误对应的非通用反馈：有音频用 AUDIO，否则回退文字。"""
+    if audio_url:
+        return _audio_fb(audio_url, variable_value)
+    return {
+        "webUrl": None,
+        "webAudioUrl": None,
+        "webListenList": [{
+            "variableKey": "WrongNumber",
+            "variableType": "int",
+            "compare": "EQUAL",
+            "value": int(variable_value.split(",")[0]),
+            "variableValue": variable_value,
+        }],
+        "logicTypeList": [],
+        "logicExpressList": [],
+        "answerType": "PICTURE_CONTENT",
+        "content": _FALLBACK_WRONG[idx],
+    }
 
 
 class BlankField(BaseModel):
@@ -188,6 +273,8 @@ class BlankBatchRequest(BaseModel):
     defaultCorrectImg: str = ""
     defaultWrongAudio: str = ""
     defaultCorrectAudio: str = ""
+    # ★ 通用语音反馈（一套复用于全部题目）
+    defaultVoiceFeedback: Optional[Dict[str, str]] = None
 
 
 def _normalize_blank_value(value: str, mapping: Dict[str, str], default: str) -> str:
@@ -222,6 +309,13 @@ def _apply_defaults(item: QuestionItem, body) -> None:
         item.knowledge = body.defaultKnowledge
     if item.subjectId == 0 and body.subjectId != 0:
         item.subjectId = body.subjectId
+    # ★ 学科防御默认：subjectId 绝对不能为 0
+    # 莫顿渲染器靠 subjectId 加载题模板/皮肤，0 会导致预览"加载配置失败"
+    # Excel 未填 且 下拉框未选(=0) 时，回退到数学(4)
+    if item.subjectId == 0:
+        item.subjectId = 4
+        print(f"[SUBJECT_DEFAULT] ⚠️ subjectId 回退为 4(数学)：Excel 未填且下拉框未选学科，"
+              f"否则莫顿预览会报'加载配置失败'")
 
     is_completion = getattr(item, "questionType", QUESTION_TYPE_CHOICE) == QUESTION_TYPE_COMPLETION
 
@@ -262,6 +356,34 @@ def _apply_defaults(item: QuestionItem, body) -> None:
         # 只有填写了反馈文本时才添加
         if cf.content and cf.content.strip():
             item.conditionFeedbacks = [cf]
+
+    # ★ 通用语音反馈（一套复用于全部题目）：defaultVoiceFeedback = {right, wrong1, wrong2, wrong3}
+    # 把 4 个音频 URL 转为逐题的"答对音频 + 3 条带音频的条件反馈(按错误次数触发)"
+    vf = getattr(body, "defaultVoiceFeedback", None)
+    if vf:
+        if vf.get("right"):
+            item.correctFeedbackAudio = vf["right"]
+        voice_cfs = []
+        for n, key in [(1, "wrong1"), (2, "wrong2"), (3, "wrong3")]:
+            if vf.get(key):
+                voice_cfs.append(ConditionFeedback(minWrong=n, maxWrong=n, audioUrl=vf[key]))
+        if voice_cfs:
+            item.conditionFeedbacks = voice_cfs
+            print(f"[VOICE_DEFAULT] ⚠️ 注入通用语音反馈: 正反馈={'有' if vf.get('right') else '无'}, "
+                  f"负反馈1-3={[ '有' if vf.get(k) else '无' for k in ('wrong1','wrong2','wrong3') ]}")
+
+    # TODO(PER_QUESTION_AUDIO) 优化口径：若 body.materials_manifest 带 per-question 音频映射，
+    # 在此按 item.name 取出对应音频，覆盖上面「一套复用于全部题」的默认语音：
+    #   am = getattr(body, "materials_manifest", None)
+    #   if am and am.get("audioMap"):
+    #       per = am["audioMap"].get(item.name)
+    #       if per and per.get("right"): item.correctFeedbackAudio = per["right"]
+    #       if per and per.get("wrong"):
+    #           item.conditionFeedbacks = [
+    #               ConditionFeedback(minWrong=w["minWrong"], maxWrong=w["minWrong"], audioUrl=w["audio"])
+    #               for w in per["wrong"]
+    #           ]
+    # 当前默认策略仍是「一套语音复用于全部题目」，故此处留空。
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -704,12 +826,15 @@ def _merge_update_fields(question_data: Dict[str, Any], item) -> tuple[bool, boo
         has_update = True
 
     # 画布背景 — 莫顿字段: webBgmUrl（BGM = background）
-    if item.backgroundUrl:
+    # ★ 只写入远程可达 URL，本地路径会拖垮渲染器
+    if item.backgroundUrl and _is_remote_url(item.backgroundUrl):
         question_data["webBgmUrl"] = item.backgroundUrl
         has_update = True
-        print(f"[UPDATE] 设置画布背景: {item.backgroundUrl[:80]}...")
+        print(f"[UPDATE] 设置画布背景(远程): {item.backgroundUrl[:80]}...")
+    elif item.backgroundUrl and not _is_remote_url(item.backgroundUrl):
+        print(f"[UPDATE] ⚠️ 跳过画布背景(本地路径): {item.backgroundUrl[:80]}...")
 
-    # ===== 反馈部分 =====
+    # ===== 反馈部分（音频优先：有音频→AUDIO(webUrl=mp3)，无→文字/图文） =====
     wrong = item.wrongFeedback
     correct = item.correctFeedback
     wrong_img = item.wrongFeedbackImg
@@ -719,56 +844,142 @@ def _merge_update_fields(question_data: Dict[str, Any], item) -> tuple[bool, boo
 
     has_feedback = bool(wrong or correct or wrong_img or correct_img or wrong_audio or correct_audio or item.conditionFeedbacks)
 
+    # 通用答错反馈：有音频→纯AUDIO，否则图文/文字
     if wrong or wrong_img or wrong_audio:
-        fb = {"answerType": "PICTURE_CONTENT"}
-        if wrong: fb["content"] = wrong
-        if wrong_img: fb["webUrl"] = wrong_img; fb["webName"] = wrong_img.rsplit("/",1)[-1] if "/" in wrong_img else wrong_img
-        if wrong_audio: fb["webAudioUrl"] = wrong_audio
-        question_data["wrongQuestionFeedback"] = fb
+        if wrong_audio:
+            question_data["wrongQuestionFeedback"] = _audio_fb(wrong_audio)
+        else:
+            fb = {"answerType": "PICTURE_CONTENT"}
+            if wrong: fb["content"] = wrong
+            if wrong_img: fb["webUrl"] = wrong_img; fb["webName"] = wrong_img.rsplit("/",1)[-1] if "/" in wrong_img else wrong_img
+            question_data["wrongQuestionFeedback"] = fb
         has_update = True
 
+    # 答对通用反馈（正反馈）：有音频→纯AUDIO，否则图文/文字
     if correct or correct_img or correct_audio:
-        fb = {"answerType": "PICTURE_CONTENT"}
-        if correct: fb["content"] = correct
-        if correct_img: fb["webUrl"] = correct_img; fb["webName"] = correct_img.rsplit("/",1)[-1] if "/" in correct_img else correct_img
-        if correct_audio: fb["webAudioUrl"] = correct_audio
-        question_data["rightQuestionFeedback"] = fb
+        if correct_audio:
+            question_data["rightQuestionFeedback"] = _audio_fb(correct_audio)
+        else:
+            fb = {"answerType": "PICTURE_CONTENT"}
+            if correct: fb["content"] = correct
+            if correct_img: fb["webUrl"] = correct_img; fb["webName"] = correct_img.rsplit("/",1)[-1] if "/" in correct_img else correct_img
+            question_data["rightQuestionFeedback"] = fb
         has_update = True
 
     # 条件反馈（基于错误次数）
     if item.conditionFeedbacks:
         cfbs = []
         for cf in item.conditionFeedbacks:
-            fb = {
-                "uuid": str(uuid_mod.uuid4()),
-                "answerType": "PICTURE_CONTENT",
-                "webListenList": [{
-                    "uuid": str(uuid_mod.uuid4()),
-                    "variableKey": "WrongNumber",
-                    "variableType": "int",
-                }],
-                "logicExpressList": [],
-                "logicTypeList": [],
-            }
-            if cf.content: fb["content"] = cf.content
-            if cf.imageUrl:
-                fb["webUrl"] = cf.imageUrl
-                fb["webName"] = cf.imageUrl.rsplit("/",1)[-1] if "/" in cf.imageUrl else cf.imageUrl
-            if cf.audioUrl: fb["webAudioUrl"] = cf.audioUrl
-
-            # 区间逻辑
-            listen = fb["webListenList"][0]
-            if cf.minWrong == cf.maxWrong:
-                listen["compare"] = "EQUAL"
-                listen["value"] = cf.minWrong
+            # ★ 有音频 → 纯 AUDIO（webUrl=mp3），不能图文挂音频
+            if cf.audioUrl:
+                n = cf.minWrong
+                vv = f"{n},{n}"
+                fb = _audio_fb(cf.audioUrl, vv)
             else:
-                listen["compare"] = "BETWEEN"
-                listen["min"] = cf.minWrong
-                listen["max"] = cf.maxWrong
+                fb = {
+                    "uuid": str(uuid_mod.uuid4()),
+                    "answerType": "PICTURE_CONTENT",
+                    "webListenList": [{
+                        "uuid": str(uuid_mod.uuid4()),
+                        "variableKey": "WrongNumber",
+                        "variableType": "int",
+                    }],
+                    "logicExpressList": [],
+                    "logicTypeList": [],
+                }
+                if cf.content: fb["content"] = cf.content
+                if cf.imageUrl:
+                    fb["webUrl"] = cf.imageUrl
+                    fb["webName"] = cf.imageUrl.rsplit("/",1)[-1] if "/" in cf.imageUrl else cf.imageUrl
+
+            # ★ variableValue 格式：莫顿要求 "N,N"（两数字一致 = 单点触发）
+            # 即使 Excel 填了区间(如 最少=1 最多=3)，也取 minWrong 作为单点
+            # 因为每条 conditionFeedback 对应一个具体错误次数（第N次错）
+            listen = fb["webListenList"][0]
+            n = cf.minWrong
+            listen["compare"] = "EQUAL"
+            listen["value"] = n
+            listen["variableValue"] = f"{n},{n}"
+            # 清洗 content 标签
+            if cf.content:
+                fb["content"] = _clean_feedback_label(cf.content)
 
             cfbs.append(fb)
         question_data["questionFeedbacks"] = cfbs
         has_update = True
+
+    # ===== ★★★ 终极防护：确保 feedback 结构正确（不再强制3条） ★★★ =====
+    # 莫顿要求：rightQuestionFeedback=答对通用反馈(纯正反馈) / questionFeedbacks=N条独立判定(纯负反馈)
+    # N 可以是 0~任意数，由组课文档/Excel 的 conditionFeedbacks 决定
+    existing_fbs = question_data.get("questionFeedbacks", [])
+
+    needs_fix = False
+    for idx, fb in enumerate(existing_fbs):
+        vv = ""
+        listen_list = fb.get("webListenList", [])
+        if listen_list and isinstance(listen_list, list) and len(listen_list) > 0:
+            vv = listen_list[0].get("variableValue", "")
+        content = fb.get("content", "")
+        # 缺少 variableValue → 修正
+        if not vv:
+            needs_fix = True
+            print(f"[FB_FIX] ⚠️ 判定{idx+1} 缺少 variableValue，需要修正")
+        # 内容含"正反馈"标签残留 → 清洗（不应出现在负反馈中）
+        if "正反馈" in content:
+            needs_fix = True
+            print(f"[FB_FIX] ⚠️ 判定{idx+1} content 含'正反馈'标签残留，将清洗")
+
+    if needs_fix:
+        print(f"[FB_FIX] 🔧 修正 {len(existing_fbs)} 条 questionFeedbacks 的结构问题...")
+        fixed_fbs = []
+        for idx, fb in enumerate(existing_fbs):
+            fb_copy = dict(fb)
+            # 清洗 content 标签
+            raw_content = fb_copy.get("content", "")
+            fb_copy["content"] = _clean_feedback_label(raw_content)
+            # 确保有 webListenList + variableValue
+            listen_list = fb_copy.get("webListenList", [])
+            if not (listen_list and isinstance(listen_list, list) and len(listen_list) > 0
+                    and listen_list[0].get("variableValue")):
+                # 尝试从已有音频推断，或使用默认值
+                n = idx + 1  # fallback: 第i条 → 第i次错误
+                fb_copy["webListenList"] = [{
+                    "variableKey": "WrongNumber",
+                    "variableType": "int",
+                    "compare": "EQUAL",
+                    "value": n,
+                    "variableValue": f"{n},{n}",
+                }]
+            else:
+                # 确保 variableValue 格式为 N,N（莫顿要求两数字一致）
+                ll = fb_copy["webListenList"][0]
+                old_vv = ll.get("variableValue", "")
+                if "," in old_vv:
+                    parts = old_vv.split(",")
+                    if len(parts) == 2 and parts[0] != parts[1]:
+                        # 区间格式(如"1,3")→取min作为单点(如"1,1")
+                        n = parts[0]
+                        ll["variableValue"] = f"{n},{n}"
+                        ll["value"] = int(n)
+                        print(f"[FB_FIX]   判定{idx+1} variableValue {old_vv} → {ll['variableValue']}（区间→单点）")
+            fixed_fbs.append(fb_copy)
+        question_data["questionFeedbacks"] = fixed_fbs
+        has_update = True
+
+    # 确保 rightQuestionFeedback 存在且不含负反馈（保留已有音频）
+    rfq = question_data.get("rightQuestionFeedback", {})
+    rfq_is_broken = (not rfq) or ("负反馈" in rfq.get("content", "")) or \
+                   (rfq.get("answerType") == "PICTURE_CONTENT" and "正反馈" in rfq.get("content", ""))
+    if rfq_is_broken:
+        if rfq.get("answerType") == "AUDIO" and rfq.get("webUrl"):
+            pass  # 已有音频，保留
+        else:
+            question_data["rightQuestionFeedback"] = {
+                "answerType": "PICTURE_CONTENT",
+                "content": _FALLBACK_RIGHT,
+            }
+            has_update = True
+            print("[FB_FIX] 🔧 修正 rightQuestionFeedback（纯正反馈/音频）")
 
     return has_update, has_feedback
 
@@ -781,6 +992,25 @@ async def _update_question(client, question_data: Dict[str, Any], question_id, i
 
     if not has_update:
         return ""
+
+    # ★ 诊断：打印 update 时 options + 反馈状态
+    qi_options = update_data.get("questionItem", {}).get("options", [])
+    for idx, o in enumerate(qi_options):
+        wurl = o.get('webOptionUrl', '')
+        print(f"[UPDATE_OPT] 选项{idx}: webOptionUrl={'有: ' + wurl[:60] if wurl else '无'}, content='{o.get('content','')[:30]}'")
+    print(f"[UPDATE_WEB] webBgmUrl={update_data.get('webBgmUrl', '无')[:60] if update_data.get('webBgmUrl') else '无'}")
+    print(f"[UPDATE_PIC] pictures个数={len(update_data.get('pictures', []))}")
+
+    # ★★ 关键诊断：打印即将发给莫顿 update API 的最终反馈结构 ★★
+    rfq = update_data.get("rightQuestionFeedback", {})
+    fbs = update_data.get("questionFeedbacks", [])
+    fb_vv = [f.get("webListenList", [{}])[0].get("variableValue", "❌缺失") for f in fbs]
+    fb_content_preview = [f.get("content", "")[:30].replace("\n", "\\n") for f in fbs]
+    print(f"[FINAL_FB] → 莫顿 update payload:")
+    print(f"  rightQuestionFeedback.content='{rfq.get('content', '(无)')[:40]}'")
+    print(f"  questionFeedbacks数={len(fbs)}, variableValues={fb_vv}")
+    for i, c in enumerate(fb_content_preview):
+        print(f"    判定{i+1} content='{c}...'")
 
     try:
         print(f"[UPDATE] 第{question_id}题: subjectId={item.subjectId} grade={item.grade} stage={item.stage} difficulty={item.difficulty} hasFeedback={has_feedback}")
@@ -797,8 +1027,60 @@ async def _update_question(client, question_data: Dict[str, Any], question_id, i
         return f"更新异常: {e}"
 
 
+def _is_remote_url(url: str) -> bool:
+    """检测 URL 是否为可被莫顿云渲染器访问的远程地址。
+
+    莫顿渲染器运行在云端，只能访问 http(s) URL。
+    本地文件路径（O:\\、D:\\、C:\\、//server/share 等）会导致图片加载失败 → 渲染崩溃 → "加载配置失败"
+    """
+    if not url:
+        return False
+    s = url.strip()
+    # 合法的远程 URL 必须以 http:// 或 https:// 开头
+    if s.startswith("http://") or s.startswith("https://"):
+        return True
+    # 其他一切（Windows 路径、UNC 路径、相对路径等）都是本地/不可达的
+    return False
+
+
 def _build_choice_payload(item: QuestionItem, subject_id: int) -> Dict[str, Any]:
     """构建选择题 insert 接口的完整 payload。"""
+    # ════════════════════════════════════════════════
+    #  阶段 0：图片 URL 预处理 — 过滤本地不可达路径
+    # ════════════════════════════════════════════════
+    original_qimgs = item.questionImages or []
+    remote_question_images = [qi for qi in original_qimgs if _is_remote_url(qi.get("url", ""))]
+    local_qimg_count = len(original_qimgs) - len(remote_question_images)
+
+    original_oimgs = item.optionImages or []
+    remote_option_images = [oi for oi in original_oimgs if _is_remote_url(oi.get("url", ""))]
+    local_oimg_count = len(original_oimgs) - len(remote_option_images)
+
+    remote_bg = item.backgroundUrl if _is_remote_url(item.backgroundUrl or "") else ""
+    # ★ 规则：题目有「远程可达的背景图」时，题干不再添加文本（背景图已含内容）
+    # 注意：本地背景图(不可达)不触发本规则——否则莫顿无法显示背景图、文本又被清空，题目会变空白
+    has_bg = bool(remote_bg)
+
+    if local_qimg_count > 0 or local_oimg_count > 0 or (item.backgroundUrl and not remote_bg):
+        print(f"[URL_FILTER] ⚠️ 过滤本地路径: {local_qimg_count}个题目图/{local_oimg_count}个选项图/"
+              f"{('1背景图为本地' if item.backgroundUrl and not remote_bg else '背景图OK')}")
+        if local_qimg_count > 0:
+            for qi in original_qimgs:
+                if not _is_remote_url(qi.get("url", "")):
+                    print(f"  → 舍弃题目图(本地): {qi.get('url', '')[:60]}")
+
+    # ★ 诊断日志：打印过滤后的图片字段状态
+    print(f"[IMG_DEBUG] 题目[{item.name or '?'}] "
+          f"questionImages={len(remote_question_images)}个(原{len(original_qimgs)}个), "
+          f"backgroundUrl={'有(' + remote_bg[:40] + ')' if remote_bg else ('有(本地!)' if item.backgroundUrl else '无')}, "
+          f"optionImages={[(oi.get('index'), oi.get('url','')[:40]) for oi in remote_option_images]}")
+    if remote_option_images:
+        for oi in remote_option_images:
+            print(f"  → optionImages[{oi.get('index')}] = {oi.get('url', '')[:60]}...")
+    if remote_question_images:
+        for qi in remote_question_images:
+            print(f"  → questionImages(远程) url = {qi.get('url', '')[:60]}...")
+
     FONT_SIZE = 32
     RGB = "#9f765b"
 
@@ -812,12 +1094,13 @@ def _build_choice_payload(item: QuestionItem, subject_id: int) -> Dict[str, Any]
         CANVAS_WIDTH, CANVAS_HEIGHT = 1334, 750
 
     # 智能布局引擎：4 阶段核心逻辑 — 测量→分区→放置→微调
+    # 注意：只传入过滤后的远程图片，本地路径图片不参与布局（云端不可达）
     layout = _calculate_smart_layout(
         options_count=len(item.options),
         contexts_count=len(item.contexts),
         context_texts=item.contexts if item.contexts else None,
-        question_images=item.questionImages if item.questionImages else None,
-        background_url=item.backgroundUrl if item.backgroundUrl else None,
+        question_images=remote_question_images if remote_question_images else None,
+        background_url=remote_bg if remote_bg else None,
         resolution=item.resolution or "1334*750",
     )
     opt_positions = layout["option_positions"]
@@ -827,9 +1110,9 @@ def _build_choice_payload(item: QuestionItem, subject_id: int) -> Dict[str, Any]
     background_url = layout["background_url"]
 
     # 构建选项
-    # 选项图片映射表 {index: url}
+    # 选项图片映射表 {index: url} — 只包含远程可访问的 URL
     opt_img_map = {}
-    for oi in (item.optionImages or []):
+    for oi in remote_option_images:
         idx = oi.get("index", -1)
         url = oi.get("url", "")
         if idx >= 0 and url:
@@ -839,45 +1122,65 @@ def _build_choice_payload(item: QuestionItem, subject_id: int) -> Dict[str, Any]
     for i, opt in enumerate(item.options):
         pos = opt_positions[i]
         is_answer = opt.label.upper() == item.answer.upper()
-        opt_payload = {
-            "uuid": str(uuid_mod.uuid4()),
-            "answer": is_answer,
-            "content": opt.content,
-            "fontSize": FONT_SIZE,
-            "rgb": RGB,
-            "displayBoxWeight": pos["width"],
-            "displayBoxHeight": pos["height"],
-            "coordinate": {"x": pos["x"], "y": pos["y"]},
-            "isAppear": True,
-            "scaleValue": 100,
-            "tmpStr": f"选项 {opt.label.upper()}",
-            "optionIndex": opt.label.upper(),
-            "isDrag": False,
-        }
-        # 选项图片
-        if i in opt_img_map:
-            opt_payload["imageUrl"] = opt_img_map[i]
+        has_img = i in opt_img_map
+        # ★★★ 关键修复：图片选项绝对不能带 rgb 字段！
+        # 对比能正常预览的题目 26018：图片选项结构只有 5 个字段，完全没有 rgb
+        # 我们之前错误地发 rgb="#" → 莫顿渲染器解析异常 → "加载配置失败"
+        if has_img:
+            # 图片选项（对齐 26018）：{webOptionUrl, answer, isAppear, coordinate, scaleValue}
+            opt_payload: Dict[str, Any] = {
+                "webOptionUrl": opt_img_map[i],
+                "answer": is_answer,
+                "isAppear": True,
+                "coordinate": {"x": pos["x"], "y": pos["y"]},
+                "scaleValue": 100,
+            }
+            print(f"  [OPT_IMG] 选项{opt.label.upper()} has_img=True(无rgb), webOptionUrl={opt_img_map[i][:60]}...")
+        else:
+            # 文字选项：保留 rgb + content + fontSize
+            opt_payload: Dict[str, Any] = {
+                "answer": is_answer,
+                "rgb": RGB,
+                "isAppear": True,
+                "coordinate": {"x": pos["x"], "y": pos["y"]},
+                "scaleValue": 100,
+                "content": opt.content,
+                "fontSize": FONT_SIZE,
+            }
         options.append(opt_payload)
 
     # 画布文本 contexts — x 固定在绿框左边缘，displayBoxWeight 占满可用宽度
+    # ★ 规则：题目有背景图(远程)时不再添加文本（背景图已含内容），contexts 留空
     contexts: List[Dict[str, Any]] = []
-    for i, text_block in enumerate(item.contexts):
-        pos = txt_positions[i]
-        # 文本 zone 可用宽度（layout 引擎已根据不同模式计算好）
-        zone_width = pos.get("width", 970)
-        # 按 zone 宽度换行，插入 \n
-        lines = _wrap_text_to_lines(text_block, text_font_size, zone_width)
-        content_with_newlines = "\n".join(lines)
-        print(f"[CONTEXT] zone_w={zone_width} x={pos.get('zone_x', pos.get('x', '?'))} "
-              f"lines={len(lines)} has_nl={'\\n' in content_with_newlines} "
-              f"content_preview={repr(content_with_newlines[:60])}")
-        contexts.append({
-            "content": content_with_newlines,
-            "size": text_font_size,
-            "rgb": RGB,
-            "coordinate": {"x": pos.get("zone_x", pos["x"]), "y": pos["y"]},
-            "uuid": str(uuid_mod.uuid4()),
-        })
+    if has_bg:
+        print(f"[BG_NOTEXT] 题目[{item.name or '?'}] 有背景图(远程)，按规则清除题干文本与contexts，不再添加文本")
+    else:
+        for i, text_block in enumerate(item.contexts):
+            pos = txt_positions[i]
+            # 文本 zone 可用宽度（layout 引擎已根据不同模式计算好）
+            zone_width = pos.get("width", 970)
+            # 按 zone 宽度换行，插入 \n
+            lines = _wrap_text_to_lines(text_block, text_font_size, zone_width)
+            content_with_newlines = "\n".join(lines)
+            print(f"[CONTEXT] zone_w={zone_width} x={pos.get('zone_x', pos.get('x', '?'))} "
+                  f"lines={len(lines)} has_nl={'\\n' in content_with_newlines} "
+                  f"content_preview={repr(content_with_newlines[:60])}")
+            contexts.append({
+                "content": content_with_newlines,
+                "size": text_font_size,
+                "rgb": RGB,
+                "coordinate": {"x": pos.get("zone_x", pos["x"]), "y": pos["y"]},
+                "uuid": str(uuid_mod.uuid4()),
+            })
+
+    # ★ displayBox 只由"题干本身是否纯图片"决定，与"选项图"无关；
+    #   但若题目有「远程背景图」，同样关闭文字框（背景图已含内容，不该再叠文字）
+    stem_text_present = bool(item.stem) or bool(contexts)
+    stem_is_pure_image = bool(remote_question_images) and not stem_text_present
+    display_box = not (stem_is_pure_image or has_bg)
+
+    # 图文互斥：题干本身是远程图片(无文字) 或 题目有远程背景图 时，清空题干文字
+    stem_content = "" if (remote_question_images or has_bg) else item.stem
 
     question_data: Dict[str, Any] = {
         "answerFeedbackType": "ALL",
@@ -885,17 +1188,91 @@ def _build_choice_payload(item: QuestionItem, subject_id: int) -> Dict[str, Any]
         "resolution": res.replace("高清", "").strip(),
         "questionItem": {
             "displayNumber": False,
-            "displayBox": True,
-            "newDisplayBox": True,
+            # ★ 关键修复：displayBox 仅由"题干是否纯图片"决定
+            #   题干有文字 → True（显示文字框）；题干纯图片 → False（显示图片）
+            "displayBox": display_box,
+            "newDisplayBox": display_box,
             "options": options,
         },
         "questionType": QUESTION_TYPE_CHOICE,
-        "autoWidth": CANVAS_WIDTH,
-        "autoHeight": CANVAS_HEIGHT,
         "name": item.name,
-        "stem": {"content": item.stem},
+        # 对齐正常题目 26249：stem 必须带 webAudioUrl 字段（即使为 null）
+        "stem": {"webAudioUrl": None, "content": stem_content},
         "subjectId": item.subjectId or subject_id,
+        # 注意：正常题目25867 无 autoWidth/autoHeight 顶层字段，移除以完全对齐
     }
+
+    # ★★★ 反馈构造：有语音用 AUDIO(纯语音, webUrl=mp3)，无语音回退文字(PICTURE_CONTENT) ★★★
+    # 莫顿规则（实测 26018）：反馈含音频时必须 answerType="AUDIO" 且音频放 webUrl，
+    # 不能 PICTURE_CONTENT 里再挂音频（非法混搭 → "加载配置失败"）。
+    # 组课文档规范：
+    #   rightQuestionFeedback → 答对时统一展示的通用正反馈（音频或文字）
+    #   判定1 (variableValue="1,1")   → 第1次错 → 负反馈1
+    #   判定2 (variableValue="2,2")   → 第2次错 → 负反馈2
+    #   判定3 (variableValue="3,3")   → 第3次错 → 负反馈3
+
+    # 收集各次错误对应的音频 URL（来自 item.conditionFeedbacks 的 audioUrl）
+    cond_audios = ["", "", ""]
+    for cf in (item.conditionFeedbacks or []):
+        n = cf.minWrong
+        if 1 <= n <= 3:
+            cond_audios[n - 1] = cf.audioUrl
+
+    # ── 答对通用反馈（正反馈独立存放）── 有语音→AUDIO，无→文字回退
+    right_audio = item.correctFeedbackAudio
+    if right_audio:
+        question_data["rightQuestionFeedback"] = _audio_fb(right_audio)
+    else:
+        question_data["rightQuestionFeedback"] = {
+            "answerType": "PICTURE_CONTENT",
+            "content": _FALLBACK_RIGHT,
+        }
+
+    # ── 非通用反馈（按条件反馈逐条生成，不再强制3条）──
+    # 每条 ConditionFeedback → 1 个 questionFeedback，用其自身的 minWrong/maxWrong
+    # 若无 conditionFeedbacks → 空 list（莫顿允许无判定反馈）
+    cond_fbs_raw = item.conditionFeedbacks or []
+    built_feedbacks = []
+    for cf in cond_fbs_raw:
+        n = cf.minWrong
+        audio_url = getattr(cf, 'audioUrl', '') or ''
+        fb_text = (getattr(cf, 'content', '') or '').strip()
+        # ★ 清洗 content 中的"负反馈N："/"第N次错误"等标签前缀
+        fb_text_clean = _clean_feedback_label(fb_text)
+        vv = f"{n},{n}" if n == getattr(cf, 'maxWrong', n) else f"{n},{getattr(cf, 'maxWrong', n)}"
+        if audio_url:
+            fb_entry = _audio_fb(audio_url, vv)
+        else:
+            fb_entry = {
+                "webUrl": None,
+                "webAudioUrl": None,
+                "webListenList": [{
+                    "variableKey": "WrongNumber",
+                    "variableType": "int",
+                    "compare": "EQUAL",
+                    "value": n,
+                    "variableValue": vv,
+                }],
+                "logicTypeList": [],
+                "logicExpressList": [],
+                "answerType": "PICTURE_CONTENT",
+                "content": fb_text_clean or _FALLBACK_WRONG[min(n-1, len(_FALLBACK_WRONG)-1)],
+            }
+        built_feedbacks.append(fb_entry)
+
+    question_data["questionFeedbacks"] = built_feedbacks
+    # 工具配置：正常题目结构必需（即使为空也是 []）
+    question_data["toolConfigList"] = []
+    # 知识点：保证始终为数组（正常题即使为空也是 []，缺失会导致结构校验失败）
+    if "knowledge" not in question_data:
+        question_data["knowledge"] = []
+
+    # ★ 诊断：打印题干和背景的最终状态（过滤后）
+    has_remote_qimg = bool(remote_question_images)
+    has_bg = bool(remote_bg)
+    print(f"[STEM_BG_DEBUG] 远程题干图={has_remote_qimg}(原{len(original_qimgs)}个), "
+          f"stem_text_present={stem_text_present}, displayBox={display_box}; "
+          f"远程背景图={has_bg}, bg_url='{(remote_bg or '')[:60]}'")
 
     # 知识点：纯字符串数组格式 ["数学", "几何"]
     if item.knowledge:
@@ -931,8 +1308,32 @@ def _build_choice_payload(item: QuestionItem, subject_id: int) -> Dict[str, Any]
             })
         question_data["pictures"] = pics
 
-    # 画布背景 — 莫顿字段: webBgmUrl（insert 不支持，统一在 update 阶段写入）
-    # 此处不设置 question_data["webUrl"]，背景在 _merge_update_fields 中处理
+    # 画布背景 — 只写入远程可达 URL（本地路径会导致渲染器加载失败）
+    if remote_bg:
+        question_data["webBgmUrl"] = remote_bg
+        print(f"[BG_INSERT] 背景图(远程)已在insert阶段写入: {remote_bg[:60]}...")
+    elif item.backgroundUrl and not remote_bg:
+        print(f"[BG_INSERT] ⚠️ 背景图是本地路径，已跳过: {item.backgroundUrl[:60]}...")
+
+    # 诊断：打印最终 payload 关键结构
+    final_opts = question_data.get("questionItem", {}).get("options", [])
+    for idx, o in enumerate(final_opts):
+        has_url = o.get("webOptionUrl", "")
+        has_content = o.get("content", "")
+        print(f"[FINAL_OPT] 选项{idx}: webOptionUrl={'有' if has_url else '无'}, content={'有' if has_content else '无'}, rgb={o.get('rgb')}, coord={o.get('coordinate')}")
+    print(f"[FINAL_PIC] pictures数={len(question_data.get('pictures', []))}, webBgmUrl={'有' if question_data.get('webBgmUrl') else '无'}, displayBox={question_data.get('questionItem', {}).get('displayBox')}")
+
+    # ★ 关键诊断：确认 questionFeedbacks + rightQuestionFeedback 结构正确
+    fbs = question_data.get("questionFeedbacks", [])
+    fb_info = [f.get("webListenList", [{}])[0].get("variableValue", "❌缺失") for f in fbs]
+    rfq = question_data.get("rightQuestionFeedback", {})
+    print(f"[FB_DEBUG] rightQuestionFeedback={'有' if rfq else '无'}(正反馈分离), "
+          f"questionFeedbacks数={len(fbs)}, 各判定variableValue={fb_info}")
+
+    # ★ 完整 JSON 输出 — 如果仍然"加载配置失败"，请把这段 JSON 发给 AI 做逐字段对比
+    print(f"[JSON_DUMP] ════════ 完整 questionData ════════")
+    print(json.dumps(question_data, ensure_ascii=False, indent=2))
+    print(f"[JSON_DUMP] ════════ END ════════")
 
     return {"questionData": question_data}, question_data
 
@@ -1053,9 +1454,16 @@ def _build_completion_payload(item: BlankQuestionItem, subject_id: int) -> Dict[
         CANVAS_WIDTH, CANVAS_HEIGHT = 1334, 750
 
     # ★ 智能布局引擎：根据文本长度 + 空位数 + 分辨率自动计算坐标
-    stem_display = item.stem.replace("______", "")
-    context_source = item.contexts[0] if item.contexts else item.stem
-    context_display = context_source.replace("______", "")
+    # ★ 规则：题目有背景图(远程)时不再添加文本（背景图已含内容）
+    has_bg_comp = bool(item.backgroundUrl and _is_remote_url(item.backgroundUrl))
+    if has_bg_comp:
+        stem_display = ""
+        context_display = ""
+        print(f"[BG_NOTEXT] 填空题[{item.name or '?'}] 有背景图(远程)，按规则清除题干文本与contexts，不再添加文本")
+    else:
+        stem_display = item.stem.replace("______", "")
+        context_source = item.contexts[0] if item.contexts else item.stem
+        context_display = context_source.replace("______", "")
     blank_count = len(item.blanks) if item.blanks else 1
 
     layout = _calculate_blank_smart_layout(
@@ -1066,7 +1474,7 @@ def _build_completion_payload(item: BlankQuestionItem, subject_id: int) -> Dict[
     tp = layout["text_position"]
     bp = layout["blank_positions"]
 
-    contexts = [{
+    contexts = [] if has_bg_comp else [{
         "content": context_display,
         "size": tp["font_size"],
         "rgb": RGB,
@@ -1143,7 +1551,7 @@ def _build_completion_payload(item: BlankQuestionItem, subject_id: int) -> Dict[
 
     question_item = {
         "displayNumber": any(blank.showNumber for blank in item.blanks),
-        "displayBox": True,
+        "displayBox": not has_bg_comp,  # ★ 规则：有背景图(远程)时关闭文字框
         "newDisplayBox": True,
         "inputType": 1,
         "keyBoardType": blanks[0]["keyBoardType"] if blanks else "HORIZONTAL_DOUBLE_LINE",
