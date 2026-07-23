@@ -1,7 +1,9 @@
 /**
  * Playwright 截图脚本 — 由 Python 后端通过子进程调用。
  *
- * 用法: node screenshot.js <questionId> <cookie> <token> [selector]
+ * 用法: node screenshot.js <questionId> <cookie> <token> <domain> [selector]
+ *   domain: 莫顿环境域名（如 https://tms.testing.xueqiulearning.com），
+ *           由后端按当前运行环境（测试/正式）传入，截图与生成保持一致。
  * 输出: PNG 二进制流写入 stdout，错误信息写入 stderr
  *
  * 优先使用系统 Chrome，避免下载 Chromium 浏览器（约 300MB）。
@@ -11,6 +13,7 @@
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
+const { URL } = require('url');
 
 // 系统 Chrome 可能的安装路径（使用正斜杠，兼容 Node.js）
 const CHROME_PATHS = [
@@ -30,14 +33,23 @@ async function main() {
   const questionId = process.argv[2];
   const cookie = process.argv[3];
   const token = process.argv[4];
-  const selector = process.argv[5] || '';
+  const domain = process.argv[5] || 'https://tms.testing.xueqiulearning.com'; // 默认测试环境
+  const selector = process.argv[6] || '';
 
   if (!questionId || !cookie || !token) {
-    process.stderr.write('Usage: node screenshot.js <questionId> <cookie> <token> [selector]\n');
+    process.stderr.write('Usage: node screenshot.js <questionId> <cookie> <token> <domain> [selector]\n');
     process.exit(1);
   }
 
-  const WIDGET_URL = `https://tms-mx.xueqiulearning.com/fe_morton/morton/widget?id=${questionId}`;
+  // 跟随当前运行环境：用后端传入的 domain 拼接 widget 地址
+  let widgetHost;
+  try {
+    widgetHost = new URL(domain).host;
+  } catch (_) {
+    widgetHost = 'tms.testing.xueqiulearning.com';
+  }
+  const WIDGET_URL = `https://${widgetHost}/fe_morton/morton/widget?id=${questionId}`;
+  process.stderr.write(`[INFO] 截图环境域名: ${widgetHost}\n`);
 
   let browser;
   try {
@@ -77,7 +89,7 @@ async function main() {
       deviceScaleFactor: 1,
     });
 
-    // 注入 Cookie
+    // 注入 Cookie（domain 跟随当前环境，与 widget 地址一致）
     const cookies = [];
     for (const pair of cookie.split(';')) {
       const trimmed = pair.trim();
@@ -86,7 +98,7 @@ async function main() {
         cookies.push({
           name: k.trim(),
           value: vParts.join('=').trim(),
-          domain: 'tms-mx.xueqiulearning.com',
+          domain: widgetHost,
           path: '/',
         });
       }

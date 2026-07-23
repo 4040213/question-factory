@@ -3,6 +3,8 @@
 import asyncio
 import io
 import json
+import re
+import urllib.parse
 import uuid as uuid_mod
 from typing import Any, Dict, List, Optional
 
@@ -44,6 +46,9 @@ class QuestionItem(BaseModel):
     options: List[ChoiceOption]
     answer: str
     name: str = ""
+    # ★ 标准编码（公司素材编码，如 26sp_G2W13-P1-1）：与文档「名称」(友好名) 互为别名，
+    #    用于匹配按公司编码命名的图片/音频文件（如 26sp_G2W13-P1-1_tips_1.mp3）。
+    code: str = ""
     # 学科/分辨率/年级/阶段/难度/知识点
     subjectId: int = 0
     resolution: str = "1334*750"
@@ -63,7 +68,12 @@ class QuestionItem(BaseModel):
     correctFeedbackImg: str = ""
     wrongFeedbackAudio: str = ""
     correctFeedbackAudio: str = ""
+    # ★ 题干音频（朗读/配音）：独立于反馈音频，存 CDN URL。有则 stem.webAudioUrl 设上、文字保留（行为B共存）
+    stemAudio: str = ""
     conditionFeedbacks: List[ConditionFeedback] = []   # 条件反馈列表（基于错误次数）
+    # ★ AI辅助提示 → 自动提示（全题型通用，不写死）
+    # 结构：[{imageUrl, audioUrl, variables: [{operation, timeSeconds}]}]
+    autoHints: Optional[List[Dict[str, Any]]] = None
 
 
 class BatchRequest(BaseModel):
@@ -91,6 +101,13 @@ class BatchRequest(BaseModel):
     # ★ 通用语音反馈（一套复用于全部题目）：{right, wrong1, wrong2, wrong3} = 莫顿CDN音频URL
     # 有语音时反馈强制 answerType="AUDIO"（莫顿规则：有音频不能混搭图文），无语音则回退文字
     defaultVoiceFeedback: Optional[Dict[str, str]] = None
+    # ★ 题干音频（全局默认，复用于全部题目，与 defaultVoiceFeedback 同理）；逐题 stemAudio 优先
+    defaultStemAudio: str = ""
+    # ★ AI辅助提示 → 自动提示（全题型通用，不写死）
+    # 结构：[{imageUrl, audioUrl, variables: [{operation, timeSeconds}]}]
+    # operation: NO_ACTION / NOT_SUBMITTED / NOT_PASSED
+    # timeSeconds: 触发时间（秒）
+    defaultAutoHints: Optional[List[Dict[str, Any]]] = None
     # ═══ 优化口径（命名自动化 / 每题各自音频）═══
     # 未来「组课文档→Excel」步骤若能做到「每题各自的反馈音频」，把素材清单（manifest）
     # 一并传上来，结构为：
@@ -122,6 +139,10 @@ class PreviewCreateRequest(BaseModel):
     # ★ 通用语音反馈（一套复用于全部题目）：{right, wrong1, wrong2, wrong3} = 莫顿CDN音频URL
     # 有语音时反馈强制 answerType="AUDIO"（莫顿规则：有音频不能混搭图文），无语音则回退文字
     defaultVoiceFeedback: Optional[Dict[str, str]] = None
+    # ★ 题干音频（全局默认，复用于全部题目，与 defaultVoiceFeedback 同理）；逐题 stemAudio 优先
+    defaultStemAudio: str = ""
+    # ★ AI辅助提示 → 自动提示（全题型通用）
+    defaultAutoHints: Optional[List[Dict[str, Any]]] = None
 
 
 class PreviewPayloadRequest(BaseModel):
@@ -143,6 +164,8 @@ class PreviewPayloadRequest(BaseModel):
     defaultQuestionImages: str = ""
     defaultBackgroundUrl: str = ""
     defaultConditionFeedback: Optional[ConditionFeedback] = None
+    # ★ AI辅助提示 → 自动提示（全题型通用）
+    defaultAutoHints: Optional[List[Dict[str, Any]]] = None
 
 
 # ============================================================
@@ -160,6 +183,55 @@ _FALLBACK_WRONG = [
     "好可惜啊，不过没关系，等所有关卡结束后，再来试一试吧！",
 ]
 _FALLBACK_RIGHT = "恭喜你，回答正确~"
+
+# 正反馈"无"判定：文档写"无"/"无正反馈"/空等 → 不生成 rightQuestionFeedback
+_NONE_FEEDBACK_VALUES = {"", "无", "无正反馈", "无反馈", "-", "/", "none", "null", "n/a"}
+def _is_positive_feedback_none(value: str) -> bool:
+    """判断正反馈字段是否表示'不需要答对反馈'（按文档原值，不硬编码题目类型）。"""
+    return (value or "").strip().lower() in _NONE_FEEDBACK_VALUES
+
+
+def _merge_voice_to_existing_cfs(item, vf: dict) -> None:
+  """将通用语音音频 URL 合并到已有的 conditionFeedbacks（保留文档的 content）。
+  匹配规则（优先级从高到低）：
+    1. 精确匹配：CF.minWrong == n → 注入 audioUrl
+    2. 范围匹配：CF.minWrong <= n <= CF.maxWrong → 注入并归一为单点(n,n)
+       （兼容旧 Excel「最少=1 最多=3」但文本实为"负反馈3"的场景）
+  都匹配不到时才追加新条目。
+  """
+  existing = getattr(item, "conditionFeedbacks", None) or []
+  if not existing:
+      # 文档没有任何条件反馈 → 按语音角色新建（旧行为，兜底）
+      item.conditionFeedbacks = [
+          ConditionFeedback(minWrong=n, maxWrong=n, audioUrl=vf[key])
+          for n, key in [(1,"wrong1"),(2,"wrong2"),(3,"wrong3")] if vf.get(key)
+      ]
+      return
+  # 已有文档条件反馈 → 对每个语音角色找能接住的 CF
+  merged = list(existing)
+  audio_injected = set()
+  for n, key in [(1,"wrong1"),(2,"wrong2"),(3,"wrong3")]:
+      url = vf.get(key, "")
+      if not url:
+          continue
+      matched = False
+      for cf in merged:
+          mn = getattr(cf, 'minWrong', 0)
+          mx = getattr(cf, 'maxWrong', 0)
+          # 范围匹配：n 落在 [mn, mx] 内且该 CF 尚无音频
+          if mn <= n <= mx and not getattr(cf, 'audioUrl', ''):
+              cf.audioUrl = url
+              # 归一为单点（文档意图就是第 N 次错的反馈）
+              cf.minWrong = n
+              cf.maxWrong = n
+              audio_injected.add(n)
+              matched = True
+              break
+      # 该语音角色无人认领 → 仅当没有同 minWrong 条目时追加
+      if not matched and n not in audio_injected:
+          if not any(getattr(c, 'minWrong', 0) == n for c in merged):
+              merged.append(ConditionFeedback(minWrong=n, maxWrong=n, audioUrl=url))
+  item.conditionFeedbacks = merged
 
 
 def _clean_feedback_label(text: str) -> str:
@@ -218,6 +290,150 @@ def _wrong_fb(audio_url: str, variable_value: str, idx: int) -> Dict[str, Any]:
     }
 
 
+# ============================================================
+#  AI辅助提示 → 自动提示 工具函数（全题型通用，字段已对齐莫顿样例）
+# ============================================================
+
+# 操作状态：中文标签 → 莫顿 variableKey 枚举
+AUTO_HINT_OP_MAP = {
+    "无操作": "NO_ACTION",
+    "未提交": "NOT_SUBMITTED",
+    "未通关": "NOT_PASSED",
+}
+AUTO_HINT_OP_ENUM = set(AUTO_HINT_OP_MAP.values())
+
+# ★ 自动提示（小灯泡）数量与每个提示的变量列数（Excel 列数，集中定义避免散落写死）
+AUTO_HINT_COUNT = 3        # 每题最多 3 个自动提示
+AUTO_HINT_VAR_COUNT = 6    # 每个自动提示最多 6 个变量（列：状态:时间）
+# 注：feishu.py 侧以同名局部常量保持同步（避免跨模块循环导入）。
+
+
+def _norm_auto_hint_op(op: str) -> str:
+    """中文标签 / 枚举值 → 莫顿 variableKey；无法识别则原样返回便于排查。"""
+    op = (op or "").strip()
+    if op in AUTO_HINT_OP_MAP:
+        return AUTO_HINT_OP_MAP[op]
+    if op in AUTO_HINT_OP_ENUM:
+        return op
+    return op
+
+
+def _parse_one_auto_hint(auto_img: str, auto_audio: str,
+                         var_raws: List[str]) -> Optional[Dict[str, Any]]:
+    """从单条自动提示的 Excel 列（图片/音频/变量1~6）构建 autoHints 元素。
+
+    每变量列格式『状态:时间』（冒号可为全角；状态可为中文或 Merton 枚举；时间单位秒）。
+    仅当 图片 / 音频 / 任一有效变量 有内容时返回该提示 dict，否则返回 None（不注入）。
+    operation 保留用户原值（中文或枚举），由 _build_auto_hint_entries → _norm_auto_hint_op 归一，
+    与前端 collectAutoHints 输出的数据结构完全一致。
+    """
+    auto_img = (auto_img or "").strip()
+    auto_audio = (auto_audio or "").strip()
+    variables: List[Dict[str, Any]] = []
+    for raw in (var_raws or []):
+        raw = (raw or "").strip()
+        if not raw:
+            continue
+        m = re.match(r'^(.+?)[\s:：]+(\d+)$', raw)
+        if m:
+            op = m.group(1).strip()
+            secs = int(m.group(2))
+        else:
+            # 仅状态无时间（或格式异常）→ 保留状态，时间记 0（_build_auto_hint_entries 会过滤无效项）
+            op = raw
+            secs = 0
+        variables.append({"operation": op, "timeSeconds": secs})
+    if not auto_img and not auto_audio and not variables:
+        return None
+    return {
+        "imageUrl": auto_img,
+        "audioUrl": auto_audio,
+        "variables": variables,
+    }
+
+
+def _parse_auto_hint_columns(hint_specs: List[tuple]) -> Optional[List[Dict[str, Any]]]:
+    """从 N 条自动提示的列规格（每条 = (图片, 音频, 变量1~6)）构建稠密的 autoHints 列表。
+
+    hint_specs 顺序即提示序号（1-based 在外层循环）。空提示被跳过，最终列表稠密
+    （索引即提示序-1），与前端 q.autoHints 及莫顿 autoTip.list 一致。
+    全部为空则返回 None（不注入 autoHints）。
+    """
+    hints: List[Dict[str, Any]] = []
+    for spec in hint_specs:
+        one = _parse_one_auto_hint(*spec)
+        if one:
+            hints.append(one)
+    return hints if hints else None
+
+
+def _derive_hint_filename(url: str) -> str:
+    """从 CDN URL 提取原始文件名（去 query/hash、URL 解码）。"""
+    if not url:
+        return ""
+    try:
+        name = urllib.parse.unquote(url.split("?")[0].split("#")[0].rstrip("/").split("/")[-1])
+    except Exception:
+        name = url.split("?")[0].rstrip("/").split("/")[-1]
+    return name
+
+
+def _build_auto_hint_entries(hints: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    将前端收集的自动提示 → 莫顿 auxiliaryTips.autoTip.list 元素列表。
+    输入：[{imageUrl, audioUrl, variables: [{operation, timeSeconds}]}]
+    输出：[{type, uuid, audioName, pictureName, webAudioUrl, webListenList, webPictureUrl, webSpineUrl, webVideoUrl}]
+    变量「操作状态 + 时间(秒)」两者都需有内容才有效（对齐用户要求）。
+    """
+    entries = []
+    for h in hints:
+        img = (h.get("imageUrl") or "").strip()
+        aud = (h.get("audioUrl") or "").strip()
+        if not img and not aud:
+            continue  # 无媒体则跳过（无效提示）
+        # 变量列表：仅保留 操作+时间 都有效的项
+        listen = []
+        for v in (h.get("variables") or []):
+            op = _norm_auto_hint_op(v.get("operation", ""))
+            ts = v.get("timeSeconds", 0)
+            if op and ts and float(ts) > 0:
+                listen.append({
+                    "variableKey": op,
+                    "variableType": "int",
+                    "variableValue": str(int(float(ts))),
+                })
+        entries.append({
+            "type": "PICTURE_POP_WINDOWS",
+            "uuid": str(uuid_mod.uuid4()),
+            "audioName": _derive_hint_filename(aud),
+            "pictureName": _derive_hint_filename(img),
+            "webAudioUrl": aud or None,
+            "webListenList": listen,
+            "webPictureUrl": img or None,
+            "webSpineUrl": None,
+            "webVideoUrl": None,
+        })
+    return entries
+
+
+def _build_auxiliary_tips(entries: List[Dict[str, Any]],
+                          coordinate: Optional[Dict[str, int]] = None,
+                          direction: str = "down") -> Dict[str, Any]:
+    """组装完整 auxiliaryTips（全题型统一结构）。"""
+    if coordinate is None:
+        coordinate = {"x": 0, "y": 0}
+    return {
+        "tips": [],
+        "autoTip": {
+            "coordinate": coordinate,
+            "direction": direction,
+            "list": entries,
+        },
+        "parses": [],
+        "experiments": [],
+    }
+
+
 class BlankField(BaseModel):
     varName: str
     blankType: str = "CONTENT"
@@ -229,12 +445,15 @@ class BlankField(BaseModel):
     showNumber: bool = True
     showBox: bool = False
     options: List[str] = []
+    optionImages: List[dict] = []  # [{index, url}, ...] 填空选择题（选项型空）的选项图
 
 
 class BlankQuestionItem(BaseModel):
     stem: str
     contexts: List[str] = []
     name: str = ""
+    # ★ 标准编码（公司素材编码）：与「名称」互为别名，用于匹配按公司编码命名的素材文件
+    code: str = ""
     subjectId: int = 0
     resolution: str = "1334*750"
     grade: int = 0
@@ -254,6 +473,8 @@ class BlankQuestionItem(BaseModel):
     wrongFeedbackAudio: str = ""
     correctFeedbackAudio: str = ""
     conditionFeedbacks: List[ConditionFeedback] = []
+    # ★ AI辅助提示 → 自动提示（全题型通用，不写死）
+    autoHints: Optional[List[Dict[str, Any]]] = None
 
 
 class BlankBatchRequest(BaseModel):
@@ -275,6 +496,8 @@ class BlankBatchRequest(BaseModel):
     defaultCorrectAudio: str = ""
     # ★ 通用语音反馈（一套复用于全部题目）
     defaultVoiceFeedback: Optional[Dict[str, str]] = None
+    # ★ 题干音频（全局默认，复用于全部题目，与 defaultVoiceFeedback 同理）；逐题 stemAudio 优先
+    defaultStemAudio: str = ""
 
 
 def _normalize_blank_value(value: str, mapping: Dict[str, str], default: str) -> str:
@@ -332,9 +555,6 @@ def _apply_defaults(item: QuestionItem, body) -> None:
     if (not getattr(item, "correctFeedbackAudio", "") or getattr(item, "correctFeedbackAudio", "").strip() == "") and body.defaultCorrectAudio:
         item.correctFeedbackAudio = body.defaultCorrectAudio
 
-    if is_completion:
-        return
-
     # 题目图片全局默认（分号分隔，仅当 Excel 未提供时生效）
     if (not getattr(item, "questionImages", []) or len(getattr(item, "questionImages", [])) == 0) and body.defaultQuestionImages:
         images = []
@@ -358,19 +578,29 @@ def _apply_defaults(item: QuestionItem, body) -> None:
             item.conditionFeedbacks = [cf]
 
     # ★ 通用语音反馈（一套复用于全部题目）：defaultVoiceFeedback = {right, wrong1, wrong2, wrong3}
-    # 把 4 个音频 URL 转为逐题的"答对音频 + 3 条带音频的条件反馈(按错误次数触发)"
+    # ★ 修复：合并到已有 conditionFeedbacks（保留文档 minWrong/maxWrong），不再直接覆盖
     vf = getattr(body, "defaultVoiceFeedback", None)
     if vf:
         if vf.get("right"):
             item.correctFeedbackAudio = vf["right"]
-        voice_cfs = []
-        for n, key in [(1, "wrong1"), (2, "wrong2"), (3, "wrong3")]:
-            if vf.get(key):
-                voice_cfs.append(ConditionFeedback(minWrong=n, maxWrong=n, audioUrl=vf[key]))
-        if voice_cfs:
-            item.conditionFeedbacks = voice_cfs
-            print(f"[VOICE_DEFAULT] ⚠️ 注入通用语音反馈: 正反馈={'有' if vf.get('right') else '无'}, "
-                  f"负反馈1-3={[ '有' if vf.get(k) else '无' for k in ('wrong1','wrong2','wrong3') ]}")
+        if any(vf.get(k) for k in ("wrong1","wrong2","wrong3")):
+            _merge_voice_to_existing_cfs(item, vf)
+            print(f"[VOICE_DEFAULT] 🔗 合并通用语音到条件反馈(保留文档区间): "
+                  f"正={'有' if vf.get('right') else '无'}, "
+                  f"负={[k for k in ('wrong1','wrong2','wrong3') if vf.get(k)]}")
+
+    # ★ 题干音频全局默认（仅当逐题未设置时生效，与 defaultVoiceFeedback 同理）
+    ds = getattr(body, "defaultStemAudio", "")
+    if ds and (not getattr(item, "stemAudio", "") or getattr(item, "stemAudio", "").strip() == ""):
+        item.stemAudio = ds
+        print(f"[STEM_AUDIO] 🔗 注入全局题干音频: {ds[:50]}")
+
+    # ★ AI辅助提示 → 自动提示（全题型通用，不写死）
+    # 仅当逐题未设置时生效（与条件反馈/语音同策略）
+    dah = getattr(body, "defaultAutoHints", None)
+    if dah and not getattr(item, "autoHints", None):
+        item.autoHints = dah
+        print(f"[AUTO_HINT] 🔗 注入全局自动提示: {len(dah)} 条")
 
     # TODO(PER_QUESTION_AUDIO) 优化口径：若 body.materials_manifest 带 per-question 音频映射，
     # 在此按 item.name 取出对应音频，覆盖上面「一套复用于全部题」的默认语音：
@@ -845,7 +1075,18 @@ def _merge_update_fields(question_data: Dict[str, Any], item) -> tuple[bool, boo
     has_feedback = bool(wrong or correct or wrong_img or correct_img or wrong_audio or correct_audio or item.conditionFeedbacks)
 
     # 通用答错反馈：有音频→纯AUDIO，否则图文/文字
-    if wrong or wrong_img or wrong_audio:
+    # ★ 去重：若通用反馈文字已作为某条「条件反馈」出现（典型：组课文档"负反馈N：文字"
+    #   被同时写入「答错通用反馈」与「条件反馈文本」两列），则不重复生成
+    #   wrongQuestionFeedback，避免学生在答错时连弹两个内容相同的窗口。通用侧的
+    #   音频/图片并入匹配到的条件反馈，避免素材丢失。
+    _gen_content = _clean_feedback_label(wrong) if wrong else ""
+    _match_cf = None
+    if _gen_content:
+        for _cf in (item.conditionFeedbacks or []):
+            if _clean_feedback_label(getattr(_cf, "content", "")) == _gen_content:
+                _match_cf = _cf
+                break
+    if (wrong or wrong_img or wrong_audio) and not _match_cf:
         if wrong_audio:
             question_data["wrongQuestionFeedback"] = _audio_fb(wrong_audio)
         else:
@@ -854,17 +1095,29 @@ def _merge_update_fields(question_data: Dict[str, Any], item) -> tuple[bool, boo
             if wrong_img: fb["webUrl"] = wrong_img; fb["webName"] = wrong_img.rsplit("/",1)[-1] if "/" in wrong_img else wrong_img
             question_data["wrongQuestionFeedback"] = fb
         has_update = True
+    elif _match_cf is not None:
+        # 通用侧素材并入条件反馈（条件反馈重建时会读取这些字段）
+        if wrong_audio and not getattr(_match_cf, "audioUrl", ""):
+            _match_cf.audioUrl = wrong_audio
+            print(f"[FB_DEDUP] 通用答错音频并入条件反馈: {_gen_content!r}")
+        if wrong_img and not getattr(_match_cf, "imageUrl", ""):
+            _match_cf.imageUrl = wrong_img
+        print(f"[FB_DEDUP] ⏭️ 通用答错反馈与条件反馈文本重复，已去重: {_gen_content!r}")
 
-    # 答对通用反馈（正反馈）：有音频→纯AUDIO，否则图文/文字
-    if correct or correct_img or correct_audio:
-        if correct_audio:
-            question_data["rightQuestionFeedback"] = _audio_fb(correct_audio)
-        else:
-            fb = {"answerType": "PICTURE_CONTENT"}
-            if correct: fb["content"] = correct
-            if correct_img: fb["webUrl"] = correct_img; fb["webName"] = correct_img.rsplit("/",1)[-1] if "/" in correct_img else correct_img
-            question_data["rightQuestionFeedback"] = fb
-        has_update = True
+    # 答对通用反馈（正反馈）：文档优先
+    # ★ correctFeedback 写"无"/空 → 不生成 rightQuestionFeedback（莫顿允许缺失）
+    if not _is_positive_feedback_none(correct):
+        if correct or correct_img or correct_audio:
+            if correct_audio:
+                question_data["rightQuestionFeedback"] = _audio_fb(correct_audio)
+            else:
+                fb = {"answerType": "PICTURE_CONTENT"}
+                if correct: fb["content"] = correct
+                if correct_img: fb["webUrl"] = correct_img; fb["webName"] = correct_img.rsplit("/",1)[-1] if "/" in correct_img else correct_img
+                question_data["rightQuestionFeedback"] = fb
+            has_update = True
+    else:
+        print(f"[RIGHT_FB_UPDATE] ⏭️ 跳过答对反馈(文档标记'无'): name={item.name!r}, correctFeedback={correct!r}")
 
     # 条件反馈（基于错误次数）
     if item.conditionFeedbacks:
@@ -965,6 +1218,14 @@ def _merge_update_fields(question_data: Dict[str, Any], item) -> tuple[bool, boo
             fixed_fbs.append(fb_copy)
         question_data["questionFeedbacks"] = fixed_fbs
         has_update = True
+
+    # ★ 文档标记"无"时，不强制补回 rightQuestionFeedback（莫顿允许缺失）
+    correct_fb_text = (getattr(item, 'correctFeedback', '') or '').strip()
+    if _is_positive_feedback_none(correct_fb_text):
+        # 文档明确写了无正反馈 → 确保不残留
+        if "rightQuestionFeedback" in question_data:
+            del question_data["rightQuestionFeedback"]
+        return has_update, has_feedback
 
     # 确保 rightQuestionFeedback 存在且不含负反馈（保留已有音频）
     rfq = question_data.get("rightQuestionFeedback", {})
@@ -1197,7 +1458,8 @@ def _build_choice_payload(item: QuestionItem, subject_id: int) -> Dict[str, Any]
         "questionType": QUESTION_TYPE_CHOICE,
         "name": item.name,
         # 对齐正常题目 26249：stem 必须带 webAudioUrl 字段（即使为 null）
-        "stem": {"webAudioUrl": None, "content": stem_content},
+        # ★ 题干音频（朗读/配音）：有则设 webAudioUrl，文字 content 保留（行为B：两者共存，音频为附加）
+        "stem": {"webAudioUrl": item.stemAudio or None, "content": stem_content},
         "subjectId": item.subjectId or subject_id,
         # 注意：正常题目25867 无 autoWidth/autoHeight 顶层字段，移除以完全对齐
     }
@@ -1218,15 +1480,27 @@ def _build_choice_payload(item: QuestionItem, subject_id: int) -> Dict[str, Any]
         if 1 <= n <= 3:
             cond_audios[n - 1] = cf.audioUrl
 
-    # ── 答对通用反馈（正反馈独立存放）── 有语音→AUDIO，无→文字回退
+    # ── 答对通用反馈（正反馈独立存放）──
+    # ★ 文档优先：correctFeedback 写"无"/空 → 不生成 rightQuestionFeedback（莫顿允许缺失）
+    # 有语音→AUDIO，有文字→PICTURE_CONTENT，都没写"无"→不生成
     right_audio = item.correctFeedbackAudio
-    if right_audio:
-        question_data["rightQuestionFeedback"] = _audio_fb(right_audio)
+    right_text = (getattr(item, 'correctFeedback', '') or '').strip()
+    if not _is_positive_feedback_none(right_text):
+        if right_audio:
+            question_data["rightQuestionFeedback"] = _audio_fb(right_audio)
+        elif right_text:
+            question_data["rightQuestionFeedback"] = {
+                "answerType": "PICTURE_CONTENT",
+                "content": right_text,
+            }
+        else:
+            # 文档没填正反馈字段（非显式"无"）→ 保留兜底文字（向后兼容）
+            question_data["rightQuestionFeedback"] = {
+                "answerType": "PICTURE_CONTENT",
+                "content": _FALLBACK_RIGHT,
+            }
     else:
-        question_data["rightQuestionFeedback"] = {
-            "answerType": "PICTURE_CONTENT",
-            "content": _FALLBACK_RIGHT,
-        }
+        print(f"[RIGHT_FB] ⏭️ 跳过答对反馈(文档标记'无'): name={item.name!r}, correctFeedback={right_text!r}")
 
     # ── 非通用反馈（按条件反馈逐条生成，不再强制3条）──
     # 每条 ConditionFeedback → 1 个 questionFeedback，用其自身的 minWrong/maxWrong
@@ -1329,6 +1603,15 @@ def _build_choice_payload(item: QuestionItem, subject_id: int) -> Dict[str, Any]
     rfq = question_data.get("rightQuestionFeedback", {})
     print(f"[FB_DEBUG] rightQuestionFeedback={'有' if rfq else '无'}(正反馈分离), "
           f"questionFeedbacks数={len(fbs)}, 各判定variableValue={fb_info}")
+
+    # ★ AI辅助提示 → 自动提示（全题型通用，不写死）
+    # 真实字段结构已对齐莫顿样例：questionData.auxiliaryTips.autoTip.list
+    hints = getattr(item, "autoHints", None)
+    if hints:
+        entries = _build_auto_hint_entries(hints)
+        if entries:
+            question_data["auxiliaryTips"] = _build_auxiliary_tips(entries)
+            print(f"[AUTO_HINT] ✅ 写入 {len(entries)} 条自动提示到 auxiliaryTips.autoTip")
 
     # ★ 完整 JSON 输出 — 如果仍然"加载配置失败"，请把这段 JSON 发给 AI 做逐字段对比
     print(f"[JSON_DUMP] ════════ 完整 questionData ════════")
@@ -1510,21 +1793,38 @@ def _build_completion_payload(item: BlankQuestionItem, subject_id: int) -> Dict[
             for opt_idx, opt_content in enumerate(blank.options):
                 opt_x = opt_start_x + opt_idx * (opt_w + opt_gap)
                 is_answer = opt_content in answers
-                opt_payload = {
-                    "uuid": str(uuid_mod.uuid4()),
-                    "answer": is_answer,
-                    "content": opt_content,
-                    "fontSize": FONT_SIZE,
-                    "rgb": RGB,
-                    "displayBoxWeight": opt_w,
-                    "displayBoxHeight": opt_h,
-                    "coordinate": {"x": opt_x, "y": pos["y"]},
-                    "isAppear": True,
-                    "scaleValue": 100,
-                    "tmpStr": f"选项 {opt_idx + 1}",
-                    "optionIndex": str(opt_idx + 1),
-                    "isDrag": False,
-                }
+                # ★ 填空选择题选项图：若该选项有图片，用 webOptionUrl（对齐选择题图片选项，禁带 rgb/content）
+                opt_img_map = {oi.get("index"): oi.get("url") for oi in (blank.optionImages or []) if oi.get("url")}
+                img_url = opt_img_map.get(opt_idx)
+                if img_url:
+                    opt_payload = {
+                        "uuid": str(uuid_mod.uuid4()),
+                        "answer": is_answer,
+                        "webOptionUrl": img_url,
+                        "isAppear": True,
+                        "coordinate": {"x": opt_x, "y": pos["y"]},
+                        "scaleValue": 100,
+                        "tmpStr": f"选项 {opt_idx + 1}",
+                        "optionIndex": str(opt_idx + 1),
+                        "isDrag": False,
+                    }
+                    print(f"  [COMPLETION_OPT_IMG] 选项型空[{blank.varName}] 选项{opt_idx + 1} 使用图片 {img_url[:50]}...")
+                else:
+                    opt_payload = {
+                        "uuid": str(uuid_mod.uuid4()),
+                        "answer": is_answer,
+                        "content": opt_content,
+                        "fontSize": FONT_SIZE,
+                        "rgb": RGB,
+                        "displayBoxWeight": opt_w,
+                        "displayBoxHeight": opt_h,
+                        "coordinate": {"x": opt_x, "y": pos["y"]},
+                        "isAppear": True,
+                        "scaleValue": 100,
+                        "tmpStr": f"选项 {opt_idx + 1}",
+                        "optionIndex": str(opt_idx + 1),
+                        "isDrag": False,
+                    }
                 options.append(opt_payload)
                 # ★ 同时加入 questionItem.options（莫顿画布渲染依赖此字段）
                 all_blank_options.append(opt_payload)
@@ -1569,7 +1869,8 @@ def _build_completion_payload(item: BlankQuestionItem, subject_id: int) -> Dict[
         "autoWidth": CANVAS_WIDTH,
         "autoHeight": CANVAS_HEIGHT,
         "name": item.name,
-        "stem": {"content": display_stem},
+        # ★ 题干音频（朗读/配音）：有则设 webAudioUrl，文字 content 保留（行为B：两者共存，音频为附加）
+        "stem": {"content": display_stem, "webAudioUrl": item.stemAudio or None},
         "subjectId": item.subjectId or subject_id,
         "contexts": contexts,
         "questionFeedbacks": [],
@@ -1585,7 +1886,25 @@ def _build_completion_payload(item: BlankQuestionItem, subject_id: int) -> Dict[
     if item.stage:
         question_data["stage"] = item.stage
 
+    # ★ 填空题反馈/语音/背景：复用 _merge_update_fields，把 item 上的
+    #   conditionFeedbacks / correctFeedbackAudio / backgroundUrl / questionImages
+    #   合并进 question_data（与选择题一致）。
+    #   前端按题名匹配的图片、全局语音(defaultVoiceFeedback)、全局背景(defaultBackgroundUrl)
+    #   都已由 _apply_defaults 注入到 item，这里统一消费，避免填空题"识别不出来"反馈/语音/图片。
+    _merge_update_fields(question_data, item)
+
     print(f"[COMPLETION] name={item.name} subjectId={question_data['subjectId']} resolution={question_data['resolution']} blanks={len(blanks)}")
+
+    # ★ AI辅助提示 → 自动提示（全题型通用，不写死）
+    # 真实字段：questionData.auxiliaryTips.autoTip.list（与选择题完全一致）
+    hints = getattr(item, "autoHints", None)
+    if hints:
+        entries = _build_auto_hint_entries(hints)
+        if entries:
+            # 覆盖下方初始化的空 auxiliaryTips 骨架
+            question_data["auxiliaryTips"] = _build_auxiliary_tips(entries)
+            print(f"[COMPLETION_AUTO_HINT] ✅ 写入 {len(entries)} 条自动提示")
+
     return {"questionData": question_data}, question_data
 
 
@@ -1855,6 +2174,7 @@ async def parse_blank_excel(file: UploadFile) -> Dict[str, Any]:
 
         idx_question_type = find_col("题型")
         idx_name = find_col("名称")
+        idx_code = find_col("标准编码", "素材编码", "题号编码", "编码")
         idx_subject = find_col("学科")
         idx_resolution = find_col("分辨率")
         idx_grade = find_col("年级")
@@ -1864,6 +2184,40 @@ async def parse_blank_excel(file: UploadFile) -> Dict[str, Any]:
         idx_stem_text = find_col("题干文本")
         idx_context_text = find_col("文本")
         idx_stem_audio = find_col("题干音频")
+
+        # ★ 反馈/语音/图片列（与选择题解析对齐；填空题 Excel 若含这些列则读取，缺则留空）
+        idx_wrong_fb = find_col("答错通用反馈")
+        idx_correct_fb = find_col("答对通用反馈")
+        idx_wrong_fb_img = find_col("答错通用反馈图片")
+        idx_correct_fb_img = find_col("答对通用反馈图片")
+        idx_wrong_fb_audio = find_col("答错通用反馈音频")
+        idx_correct_fb_audio = find_col("正反馈音频")
+        idx_q_imgs = find_col("题目图片")
+        idx_bg = find_col("背景图")
+        idx_cond_min = find_col("最少错次")
+        idx_cond_max = find_col("最多错次")
+        idx_cond_text = find_col("条件反馈文本")
+        idx_cond_img = find_col("条件反馈图片")
+        idx_cond_audio = find_col("条件反馈音频")
+
+        # ★ 自动提示（小灯泡）：最多 3 个提示，每个 图片/音频 + 变量1~6（列存在才读取；旧 Excel 无此列则 -1 优雅跳过）
+        #   第 1 个提示兼容旧单提示 Excel 的无序号表头（自动提示图片 / 自动提示音频 / 自动提示变量N）
+        # 第 1 个提示兼容旧单提示 Excel 的无序号表头（自动提示图片 / 自动提示音频 / 自动提示变量N）
+        def _auto_col_names(h: int, base: str):
+            names = [f"自动提示{h}{base}"]
+            if h == 1:
+                if base == "图片":
+                    names.append("自动提示图片")
+                elif base == "音频":
+                    names.append("自动提示音频")
+                elif base.startswith("变量"):
+                    names.append(f"自动提示{base}")
+            return tuple(names)
+
+        idx_auto_img = [find_col(*_auto_col_names(h, "图片")) for h in range(1, AUTO_HINT_COUNT + 1)]
+        idx_auto_audio = [find_col(*_auto_col_names(h, "音频")) for h in range(1, AUTO_HINT_COUNT + 1)]
+        idx_auto_vars = [[find_col(*_auto_col_names(h, f"变量{i}")) for i in range(1, AUTO_HINT_VAR_COUNT + 1)]
+                         for h in range(1, AUTO_HINT_COUNT + 1)]
 
         # 多空按空编号扫描
         blank_groups = []
@@ -1897,6 +2251,7 @@ async def parse_blank_excel(file: UploadFile) -> Dict[str, Any]:
             if qtype and qtype not in ("COMPLETION", "BLANK"):
                 continue
             name = str(get(row, idx_name, "")).strip()
+            code = str(get(row, idx_code, "")).strip()
             subject_raw = str(get(row, idx_subject, "")).strip()
             resolution = str(get(row, idx_resolution, "1334*750")).strip()
             grade_raw = str(get(row, idx_grade, "")).strip().replace("－", "-").replace("—", "-")
@@ -1906,6 +2261,32 @@ async def parse_blank_excel(file: UploadFile) -> Dict[str, Any]:
             stem_text = str(get(row, idx_stem_text, "")).strip()
             context_text = str(get(row, idx_context_text, stem_text)).strip()
             stem_audio = str(get(row, idx_stem_audio, "")).strip()
+
+            # ★ 自动提示（小灯泡）：逐提示读取图片/音频/变量1~6，构建最多 3 条提示（空提示跳过）
+            auto_hint_specs = []
+            for _h in range(AUTO_HINT_COUNT):
+                _ai = idx_auto_img[_h]
+                _aa = idx_auto_audio[_h]
+                _img = str(get(row, _ai, "")).strip() if _ai >= 0 else ""
+                _aud = str(get(row, _aa, "")).strip() if _aa >= 0 else ""
+                _vars = [str(get(row, c, "")).strip() if c >= 0 else "" for c in idx_auto_vars[_h]]
+                auto_hint_specs.append((_img, _aud, _vars))
+            auto_hints = _parse_auto_hint_columns(auto_hint_specs)
+
+            # ★ 反馈/语音/图片（列存在才读取；与选择题解析对齐）
+            wrong_fb = str(get(row, idx_wrong_fb, "")).strip()
+            correct_fb = str(get(row, idx_correct_fb, "")).strip()
+            wrong_fb_img = str(get(row, idx_wrong_fb_img, "")).strip()
+            correct_fb_img = str(get(row, idx_correct_fb_img, "")).strip()
+            wrong_fb_audio = str(get(row, idx_wrong_fb_audio, "")).strip()
+            correct_fb_audio = str(get(row, idx_correct_fb_audio, "")).strip()
+            q_imgs_raw = str(get(row, idx_q_imgs, "")).strip()
+            bg_url = str(get(row, idx_bg, "")).strip()
+            cond_min_raw = str(get(row, idx_cond_min, "")).strip()
+            cond_max_raw = str(get(row, idx_cond_max, "")).strip()
+            cond_text = str(get(row, idx_cond_text, "")).strip()
+            cond_img = str(get(row, idx_cond_img, "")).strip()
+            cond_audio = str(get(row, idx_cond_audio, "")).strip()
 
             if subject_raw.isdigit():
                 subject_id = int(subject_raw)
@@ -1972,9 +2353,42 @@ async def parse_blank_excel(file: UploadFile) -> Dict[str, Any]:
             if not stem_text or not blanks:
                 continue
 
+            # ★ 条件反馈：最少/最多错次 + 条件文本。以"负反馈N"为准做 N-N 单点归一，
+            #   并在解析阶段即清洗"负反馈N："前缀（与选择题一致）。
+            cond_min_wrong = 0
+            cond_max_wrong = 0
+            if cond_min_raw and cond_min_raw.replace("-", "").isdigit():
+                cond_min_wrong = max(0, int(cond_min_raw))
+            if cond_max_raw and cond_max_raw.replace("-", "").isdigit():
+                cond_max_wrong = max(0, int(cond_max_raw))
+            _neg_m = re.search(r'负反馈\s*(\d+)', cond_text)
+            if _neg_m:
+                _neg_n = int(_neg_m.group(1))
+                cond_min_wrong = _neg_n
+                cond_max_wrong = _neg_n
+
+            condition_feedbacks = []
+            if cond_text.strip():
+                condition_feedbacks.append({
+                    "minWrong": cond_min_wrong,
+                    "maxWrong": cond_max_wrong,
+                    "content": _clean_feedback_label(cond_text),
+                    "imageUrl": cond_img,
+                    "audioUrl": cond_audio,
+                })
+
+            # ★ 题目图片：分号分隔 → [{url, width, height}]
+            question_images = []
+            if q_imgs_raw:
+                for url in q_imgs_raw.split(";"):
+                    url = url.strip()
+                    if url:
+                        question_images.append({"url": url, "width": 0, "height": 0})
+
             questions.append({
                 "stem": stem_text,
                 "name": name,
+                "code": code,
                 "subjectId": subject_id,
                 "resolution": resolution,
                 "grade": grade_val,
@@ -1984,8 +2398,18 @@ async def parse_blank_excel(file: UploadFile) -> Dict[str, Any]:
                 "questionType": QUESTION_TYPE_COMPLETION,
                 "contentMarkup": content_markup,
                 "contexts": [context_text] if context_text else [],
-                "stemAudio": stem_audio,
                 "blanks": blanks,
+                "questionImages": question_images,
+                "backgroundUrl": bg_url,
+                "wrongFeedback": wrong_fb,
+                "correctFeedback": correct_fb,
+                "wrongFeedbackImg": wrong_fb_img,
+                "correctFeedbackImg": correct_fb_img,
+                "wrongFeedbackAudio": wrong_fb_audio,
+                "correctFeedbackAudio": correct_fb_audio,
+                "stemAudio": stem_audio,
+                "conditionFeedbacks": condition_feedbacks,
+                "autoHints": auto_hints,
             })
         wb.close()
         return {"success": True, "questions": questions, "total": len(questions)}
@@ -2014,6 +2438,46 @@ async def parse_excel(file: UploadFile = File(...), question_type: str = "CHOICE
                          (h7 in ("F", "选项F")))
         print(f"[PARSE] 检测格式: {'新(E-H,31列)' if is_new_format else '旧(A-D,22列)'} header={len(header)}列 h6={repr(h6)} h7={repr(h7)}")
 
+        # ★ 题干音频（朗读/配音）：按表头名识别（配音/题干音频/朗读音频 等），与反馈音频独立
+        idx_stem_audio = -1
+        for _h in ("题干音频", "配音", "朗读音频", "题干配音", "narration"):
+            if _h in header:
+                idx_stem_audio = header.index(_h)
+                break
+
+        # ★ 自动提示（小灯泡）：最多 3 个提示，每个 图片/音频 + 变量1~6（按表头名定位；列缺失则 -1）
+        #   第 1 个提示兼容旧单提示 Excel 的无序号表头（自动提示图片 / 自动提示音频 / 自动提示变量N）
+        def _find_auto_col(name: str) -> int:
+            return header.index(name) if name in header else -1
+
+        def _find_auto_cols(*names: str) -> int:
+            """返回首个命中的表头列号，全部未命中返回 -1。"""
+            for n in names:
+                if n in header:
+                    return header.index(n)
+            return -1
+
+        def _auto_col_names(h: int, base: str):
+            names = [f"自动提示{h}{base}"]
+            if h == 1:
+                if base == "图片":
+                    names.append("自动提示图片")
+                elif base == "音频":
+                    names.append("自动提示音频")
+                elif base.startswith("变量"):
+                    names.append(f"自动提示{base}")
+            return tuple(names)
+
+        idx_auto_img = [_find_auto_cols(*_auto_col_names(h, "图片")) for h in range(1, AUTO_HINT_COUNT + 1)]
+        idx_auto_audio = [_find_auto_cols(*_auto_col_names(h, "音频")) for h in range(1, AUTO_HINT_COUNT + 1)]
+        # ★ 标准编码（公司素材编码）：与「名称」互为别名，用于匹配按公司编码命名的素材文件
+        idx_code = _find_auto_cols("标准编码", "素材编码", "题号编码", "编码")
+        idx_auto_vars = [[_find_auto_cols(*_auto_col_names(h, f"变量{i}")) for i in range(1, AUTO_HINT_VAR_COUNT + 1)]
+                         for h in range(1, AUTO_HINT_COUNT + 1)]
+
+
+
+
         rows = list(ws.iter_rows(min_row=2, values_only=True))
         questions: List[Dict[str, Any]] = []
 
@@ -2023,6 +2487,25 @@ async def parse_excel(file: UploadFile = File(...), question_type: str = "CHOICE
 
             stem = str(row[0] or "").strip()
             contexts_text = str(row[1] or "").strip()
+            # ★ 题干音频（朗读/配音）：按表头定位，与反馈音频独立
+            stem_audio = (str(row[idx_stem_audio]).strip()
+                          if idx_stem_audio >= 0 and idx_stem_audio < len(row) and row[idx_stem_audio] is not None
+                          else "")
+            # ★ 自动提示（小灯泡）：逐提示读取图片/音频/变量1~6，构建最多 3 条提示（空提示跳过）
+            auto_hint_specs = []
+            for _h in range(AUTO_HINT_COUNT):
+                _ai = idx_auto_img[_h]
+                _aa = idx_auto_audio[_h]
+                _img = (str(row[_ai]).strip()
+                        if _ai >= 0 and _ai < len(row) and row[_ai] is not None else "")
+                _aud = (str(row[_aa]).strip()
+                        if _aa >= 0 and _aa < len(row) and row[_aa] is not None else "")
+                _vars = [
+                    str(row[c]).strip() if (c >= 0 and c < len(row) and row[c] is not None) else ""
+                    for c in idx_auto_vars[_h]
+                ]
+                auto_hint_specs.append((_img, _aud, _vars))
+            auto_hints = _parse_auto_hint_columns(auto_hint_specs)
             # 选项 & 答案 — 根据格式版本读取不同列号
             if is_new_format:
                 option_a = str(row[2] or "").strip()
@@ -2043,6 +2526,7 @@ async def parse_excel(file: UploadFile = File(...), question_type: str = "CHOICE
                 option_e = ""; option_f = ""; option_g = ""; option_h = ""
                 answer = str(row[6] or "").strip().upper() if len(row) > 6 else ""
                 question_name = str(row[7] or "").strip() if len(row) > 7 else ""
+            code = str(row[idx_code]).strip() if (idx_code >= 0 and idx_code < len(row) and row[idx_code] is not None) else ""
 
             # 学科/分辨率/年级/阶段/难度/知识点/图片/背景/反馈/条件反馈 — 根据格式版本
             if is_new_format:
@@ -2118,13 +2602,25 @@ async def parse_excel(file: UploadFile = File(...), question_type: str = "CHOICE
             if cond_max_raw and cond_max_raw.replace("-","").isdigit():
                 cond_max_wrong = max(0, int(cond_max_raw))
 
+            # ★ 单点归一：条件文本为「负反馈N」时，错误区间强制 N-N（单次触发），
+            # 与莫顿 variableValue="N,N" 一致。避免 Excel 填 1~3 被误读为区间，
+            # 同时让「编辑反馈」界面与莫顿最终生成都显示 N-N。文本优先于 最少/最多错次 列。
+            _neg_m = re.search(r'负反馈\s*(\d+)', cond_fb_text)
+            if _neg_m:
+                _neg_n = int(_neg_m.group(1))
+                cond_min_wrong = _neg_n
+                cond_max_wrong = _neg_n
+                print(f"[COND_NORM] 条件文本'负反馈{_neg_n}' → 归一化区间 {_neg_n}-{_neg_n}")
+
             # 构建条件反馈列表
             condition_feedbacks = []
             if cond_fb_text.strip():
+                # ★ 解析阶段即清洗「负反馈N：」等标签前缀，让编辑界面与莫顿生成一致显示干净文本
+                _cond_fb_clean = _clean_feedback_label(cond_fb_text)
                 condition_feedbacks.append({
                     "minWrong": cond_min_wrong,
                     "maxWrong": cond_max_wrong,
-                    "content": cond_fb_text,
+                    "content": _cond_fb_clean,
                     "imageUrl": cond_fb_img,
                     "audioUrl": cond_fb_audio,
                 })
@@ -2177,6 +2673,7 @@ async def parse_excel(file: UploadFile = File(...), question_type: str = "CHOICE
                 "options": options,
                 "answer": answer,
                 "name": question_name,
+                "code": code,
                 "subjectId": subject_id,
                 "resolution": resolution,
                 "grade": grade_val,
@@ -2191,7 +2688,9 @@ async def parse_excel(file: UploadFile = File(...), question_type: str = "CHOICE
                 "correctFeedbackImg": correct_fb_img,
                 "wrongFeedbackAudio": wrong_fb_audio,
                 "correctFeedbackAudio": correct_fb_audio,
+                "stemAudio": stem_audio,
                 "conditionFeedbacks": condition_feedbacks,
+                "autoHints": auto_hints,
             })
 
         wb.close()

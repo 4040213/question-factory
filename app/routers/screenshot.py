@@ -15,6 +15,8 @@ from fastapi import APIRouter
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from app.config import get_morton_api  # ★ 截图跟随当前运行环境（测试/正式）
+
 router = APIRouter(prefix="/api/screenshot", tags=["截图预览"])
 
 # ========== 配置 ==========
@@ -49,6 +51,7 @@ class ScreenshotRequest(BaseModel):
     cookie: str
     token: str
     selector: str = ""
+    domain: str = ""  # 可选：明确指定环境域名；缺省时取后端当前运行环境
 
 
 @router.post("/capture")
@@ -79,6 +82,9 @@ async def capture_screenshot(req: ScreenshotRequest):
     # 加锁，防止并发截图导致浏览器资源耗尽
     async with _lock:
         try:
+            # ★ 截图跟随当前运行环境：domain 缺省取 get_morton_api()（测试/正式一致）
+            shot_domain = req.domain.strip() if req.domain else get_morton_api()
+
             # 调用 Node.js 截图脚本
             cmd = [
                 NODE_PATH,
@@ -86,6 +92,7 @@ async def capture_screenshot(req: ScreenshotRequest):
                 str(req.questionId),
                 req.cookie,
                 req.token,
+                shot_domain,
             ]
             if req.selector:
                 cmd.append(req.selector)

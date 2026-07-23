@@ -27,6 +27,17 @@
     .page-header h1 { font-size: 28px; font-weight: 700; color: #fff; letter-spacing: -0.3px; display: flex; align-items: center; justify-content: center; gap: 12px; }
     .page-header h1 span { background: linear-gradient(135deg, var(--accent), #a78bfa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
     .page-header .subtitle { color: var(--text-dim); font-size: 15px; margin-top: 6px; }
+    /* 莫顿环境切换器 */
+    .env-switcher { display: inline-flex; align-items: center; gap: 10px; margin-top: 14px; padding: 6px 8px 6px 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-input); font-size: 13px; flex-wrap: wrap; justify-content: center; }
+    .env-switcher .env-label { color: var(--text-dim); }
+    .env-seg { display: inline-flex; border-radius: 999px; overflow: hidden; border: 1px solid var(--border); }
+    .env-opt { border: none; background: transparent; color: var(--text-dim); padding: 6px 16px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .2s; font-family: inherit; }
+    .env-opt:hover { color: var(--text); }
+    .env-opt.active { color: #fff; }
+    .env-opt.active[data-env="formal"] { background: var(--green); }
+    .env-opt.active[data-env="test"] { background: var(--orange); }
+    .env-url { color: var(--text-muted); font-size: 12px; font-family: ui-monospace, Menlo, Consolas, monospace; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .env-toast { display: block; margin-top: 8px; font-size: 13px; font-weight: 600; min-height: 1em; }
     .main-layout { display: flex; flex-direction: column; gap: 16px; max-width: 1600px; margin: 0 auto; padding: 16px 20px; }
     .top-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: stretch; }
     .main-left { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
@@ -142,6 +153,35 @@
     .auth-inline input { flex: 1; }
     .auth-inline .btn { flex-shrink: 0; }
     .card-body { margin-top: 14px; }
+    /* ═══ AI辅助提示 → 自动提示 样式 ═══ */
+    .auto-hint-item {
+      background: rgba(124,92,252,0.04); border: 1px solid rgba(124,92,252,0.15);
+      border-radius: var(--radius-sm); padding: 12px 14px; margin-top: 10px;
+      position: relative; transition: border-color .2s;
+    }
+    .auto-hint-item:hover { border-color: rgba(124,92,252,0.35); }
+    .auto-hint-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .auto-hint-title { font-size: 14px; font-weight: 600; color: #a78bfa; }
+    .auto-hint-remove { background:none; border:none; color: var(--red); cursor:pointer; font-size:16px; padding:2px 6px; border-radius:4px; line-height:1; }
+    .auto-hint-remove:hover { background: var(--red-bg); }
+    .auto-hint-row { display: grid; gap: 8px; margin-bottom: 8px; }
+    .auto-hint-row.cols-2 { grid-template-columns: 1fr 1fr; }
+    .auto-hint-row label { font-size: 13px; color: var(--text-dim); }
+    .auto-hint-row input, .auto-hint-row select { padding: 7px 10px; font-size: 14px; }
+    /* 变量行 */
+    .var-item {
+      background: rgba(255,255,255,0.02); border: 1px solid var(--border);
+      border-radius: 6px; padding: 10px 12px; margin-top: 8px; position: relative;
+    }
+    .var-item-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .var-item-title { font-size: 13px; font-weight: 600; color: var(--orange); }
+    .var-remove-btn { background:none; border:none; color: var(--text-muted); cursor:pointer; font-size:14px; padding:0 4px; border-radius:4px; }
+    .var-remove-btn:hover { color: var(--red); background: var(--red-bg); }
+    .var-fields { display: grid; gap: 6px; grid-template-columns: 1fr 1fr; }
+    .var-fields label { font-size: 12px; color: var(--text-muted); }
+    .var-fields select, .var-fields input { padding: 6px 8px; font-size: 13px; }
+    .add-var-btn { background: none; border: 1px dashed var(--border); color: var(--text-dim); width: 100%; padding: 6px; border-radius: 4px; cursor: pointer; font-size: 13px; margin-top: 6px; transition: all .2s; }
+    .add-var-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
@@ -150,6 +190,15 @@
   <div class="page-header">
     <h1><img src="/static/logo.png" alt="logo" style="width:44px;height:44px;border-radius:8px;display:block;"><span>雪球课堂试题生成工具</span></h1>
     <p class="subtitle">从 Excel 表格批量导入选择题到莫顿教学系统</p>
+    <div class="env-switcher" id="env-switcher" title="切换莫顿环境（正式 / 测试）">
+      <span class="env-label">当前环境：</span>
+      <div class="env-seg">
+        <button type="button" class="env-opt" data-env="formal" onclick="switchEnv('formal')">正式环境</button>
+        <button type="button" class="env-opt" data-env="test" onclick="switchEnv('test')">测试环境</button>
+      </div>
+      <span class="env-url" id="env-url"></span>
+      <span class="env-toast" id="env-toast"></span>
+    </div>
   </div>
   <div class="main-layout">
     <div class="top-row">
@@ -180,7 +229,8 @@
             <div style="font-weight:600;margin-bottom:8px;font-size:14px;">🔗 莫顿素材库 URL 读回（图片匹配）</div>
             <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;">
               ① 在 Figma 导出前把画板命名为 <code>Q03-bg</code>(背景) / <code>Q03</code>(题目图) / <code>Q03-A</code>(选项A) 等，上传到莫顿素材库一个文件夹；<br>
-              ② 填文件夹 ID 点「读回 URL」→ 按文件名自动匹配回填；<br>
+              ② 自动提示图（小灯泡）用 <code>Q03-bulb</code>/<code>Q03-小灯泡</code>(提示1图) · <code>Q03-bulb2</code>/<code>Q03-小灯泡2</code>(提示2图) · <code>Q03-bulb3</code>/<code>Q03-小灯泡3</code>(提示3图)… 同一文件夹内，读回时自动填入该题「✨自动提示」；<br>
+              ③ 填文件夹 ID 点「读回 URL」→ 按文件名自动匹配回填；<br>
               ③ 文件名无规律的图会进下方「手动映射」面板，逐张指派到题目与角色。<br>
               <span style="color:#94a3b8;">注：不存在"答案图"——答案是图片时它就是某个选项图，正确选项靠题目的「答案」字段标记（如答案填 B，即选项B的图就是答案）。</span>
             </div>
@@ -214,7 +264,7 @@
               ① 下载组课文档的语音压缩包 → 解压 → <b>把 mp3/wav 文件拖到下方区域</b>（或点击选择文件）；<br>
               ② 系统按文件名自动识别「正反馈 / 负反馈1/2/3」并展示；<br>
               ③ 把同一批语音<b>上传到莫顿素材库</b> → 点上方「读回 URL」→ 自动匹配 CDN 地址 → 直接生成。<br>
-              <span style="color:#94a3b8;">支持两种命名：关卡专属(_r_/_w_1~3) 和通用(正反馈/第N次错误)。未识别的文件会标黄。</span>
+              <span style="color:#94a3b8;">命名规范：正反馈 <b>_r</b> · 负反馈 <b>w_步_次</b>(如 w_1_2) · 题干音频 <b>_tg</b>(或 _s/朗读/配音) · 自动提示音频 <b>_tips</b>(提示1) / <b>_tips2</b> 或 <b>_tips_2</b>(提示2) / <b>_tips3</b> 或 <b>_tips_3</b>(提示3)。未识别的文件会标黄。</span>
             </div>
 
             <!-- ★ 拖拽区 -->
@@ -285,6 +335,9 @@
                 </div>
                 <div><label style="font-size:12px;">负反馈3（第3次错）</label>
                   <select id="voice-wrong3" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-input);color:var(--text);"><option value="">— 未选择 —</option></select>
+                </div>
+                <div><label style="font-size:12px;">题干音频（朗读/配音）</label>
+                  <select id="voice-stem" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-input);color:var(--text);"><option value="">— 未选择 —</option></select>
                 </div>
               </div>
             </details>
@@ -371,6 +424,20 @@
           </div>
         </div>
       </div>
+
+      <!-- ═══ AI辅助提示 → 自动提示 （全题型通用，不写死）═══ -->
+      <div class="card" id="ai-hint-card">
+        <h2><span class="icon">✨</span> AI辅助提示</h2>
+        <div class="card-body">
+          <p class="settings-hint" style="margin-bottom:10px">自动提示：在题目中添加带变量条件的智能提示（图片/音频 + 多个触发变量）。选择题、填空题及未来题型通用。</p>
+
+          <!-- 自动提示列表容器 -->
+          <div id="auto-hint-list"></div>
+
+          <!-- 添加自动提示按钮 -->
+          <button class="btn btn-outline btn-sm" style="width:100%;margin-top:10px;text-align:center" onclick="addAutoHint()">+ 添加自动提示</button>
+        </div>
+      </div>
     </div>
   </div>
   <div class="bottom-full">
@@ -414,12 +481,22 @@
           <div><label>答对图片URL</label><input id="fb-right-img" placeholder="//cdn.xxx.com/right.png"></div>
           <div><label>答错音频URL</label><input id="fb-wrong-audio" placeholder="//cdn.xxx.com/sound.mp3"></div>
           <div><label>答对音频URL</label><input id="fb-right-audio" placeholder="//cdn.xxx.com/cheer.mp3"></div>
+          <div style="grid-column:1/-1"><label>题干音频URL（朗读/配音，独立于反馈音频）</label><input id="fb-stem-audio" placeholder="//cdn.xxx.com/stem.mp3 或 文件名如 轻互动1-2_s.mp3"></div>
         </div>
         <label class="mt-12">答对反馈文本</label><textarea id="fb-right-text" rows="2" placeholder="太棒了，答对了！"></textarea>
         <div style="border-bottom:1px solid var(--border);margin:16px 0 12px"><p style="font-size:14px;color:var(--orange);margin-bottom:8px">⚠ 条件反馈</p></div>
         <div id="cond-fb-container"></div>
         <button class="btn btn-outline" style="width:100%;text-align:center" onclick="addCondFeedback()">+ 添加条件反馈</button>
         <div class="btn-row"><button class="btn btn-outline" onclick="closeFbModal()">取消</button><button class="btn btn-primary" onclick="saveFbModal()">保存</button></div>
+      </div>
+    </div>
+    <div class="modal-overlay hidden" id="autohint-modal" onclick="if(event.target===this)closeAutoHintModal()">
+      <div class="modal-box" onclick="event.stopPropagation()">
+        <h3 id="autohint-modal-title">✨ 自动提示</h3>
+        <p class="settings-hint" style="margin-bottom:10px">本题专属自动提示（图片 / 音频 + 触发变量）。留空则回落到全局默认（右侧「AI辅助提示」面板）。选择题、填空题及未来题型通用。</p>
+        <div id="per-q-ah-list"></div>
+        <button class="btn btn-outline btn-sm" style="width:100%;margin-top:10px;text-align:center" onclick="addPerQAutoHint()">+ 添加自动提示</button>
+        <div class="btn-row"><button class="btn btn-outline" onclick="closeAutoHintModal()">取消</button><button class="btn btn-primary" onclick="saveAutoHintModal()">保存</button></div>
       </div>
     </div>
     <div class="modal-overlay hidden" id="preview-modal" onclick="if(event.target===this)closePreviewModal()">
@@ -597,6 +674,53 @@
 
     // 页面加载时立即获取
     loadMappings();
+    loadEnv();
+
+    // ========== 莫顿环境切换 ==========
+    async function loadEnv() {
+      try {
+        const resp = await fetch('/api/morton/env');
+        const d = await resp.json();
+        renderEnv(d);
+      } catch (e) {
+        console.warn('加载环境信息失败:', e);
+      }
+    }
+
+    function renderEnv(info) {
+      const key = info.key || 'formal';
+      document.querySelectorAll('#env-switcher .env-opt').forEach(b => {
+        b.classList.toggle('active', b.dataset.env === key);
+      });
+      const urlEl = document.getElementById('env-url');
+      if (urlEl) urlEl.textContent = info.url || '';
+    }
+
+    async function switchEnv(key) {
+      const toast = document.getElementById('env-toast');
+      try {
+        const resp = await fetch('/api/morton/env', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key }),
+        });
+        const d = await resp.json();
+        if (d.success) {
+          renderEnv(d);
+          // 切换环境后，原 Cookie 可能属于另一环境，清空鉴权并要求重新粘贴
+          authToken = '';
+          authCookie = '';
+          if (toast) {
+            toast.textContent = `✅ 已切换到【${d.label}】，请重新粘贴该环境的 Cookie 并点验证`;
+            toast.style.color = 'var(--green)';
+          }
+        } else {
+          if (toast) { toast.textContent = `❌ 切换失败：${d.error || '未知错误'}`; toast.style.color = 'var(--red)'; }
+        }
+      } catch (e) {
+        if (toast) { toast.textContent = `❌ 请求失败：${e.message}`; toast.style.color = 'var(--red)'; }
+      }
+    }
 
     // ========== Cookie 验证 ==========
     async function validateCookie() {
@@ -778,22 +902,23 @@
 
     // ========== 语音文件自动识别 v2 ==========
     // 状态：拖入的本地语音文件（存 File 对象用于上传 + 文件名用于匹配 CDN）
-    let voiceLocalFiles = { right: null, wrong1: null, wrong2: null, wrong3: null };       // {name, file}
+    let voiceLocalFiles = { right: null, wrong1: null, wrong2: null, wrong3: null, stem: null };       // {name, file}
     let voiceAllDroppedFiles = [];  // 所有拖入的音频文件（File 对象列表），用于批量上传
     // 状态：读回后匹配到的 CDN URL
-    let voiceCdnUrls = { right: null, wrong1: null, wrong2: null, wrong3: null };
+    let voiceCdnUrls = { right: null, wrong1: null, wrong2: null, wrong3: null, stem: null };
 
     const VOICE_ROLE_LABELS = {
       right: '正反馈（答对）',
       wrong1: '负反馈1（第1次错）',
       wrong2: '负反馈2（第2次错）',
       wrong3: '负反馈3（第3次错）',
+      stem: '题干音频（朗读/配音）',
     };
 
     /**
      * 根据文件名判断语音角色。
      * 规则集（按优先级）：
-     *   关卡专属: _r（后跟.或结尾）→ right; _w_1 / _w_2 / _w_3 → wrong1~3; _tips* → 忽略(提示语)
+     *   关卡专属: _r（后跟.或结尾）→ right; w_X_Y（X=步,Y=出现次数）→ wrongY; tg → stem(题干音频); _tips* → 忽略(提示语)
      *   通用: 含"正反馈"→right; 含"第N次错误/反馈"→wrongN
      * 返回 'right' | 'wrong1' | 'wrong2' | 'wrong3' | null(未识别)
      *
@@ -804,17 +929,40 @@
      */
     function classifyVoiceFile(filename) {
       const name = filename.toLowerCase();
-      // 规则1a: 正反馈 — _r 后跟 . / _ / - / 数字 / 末尾 / 扩展名
+      // 规则1a: 正反馈 — _r（关卡专属标识，如 xxx_r.mp3 / p1_1_r.mp3）
       if (/_r([._\-]|\d|\s|$)/.test(name) || /_r\.(mp3|wav|m4a|ogg|aac)/.test(name)) return 'right';
-      // 规则1b: 负反馈 — _w_N (N=1~3)
-      if (/_w[_\-]?1([._\-]|\d|\s|$|\.mp3|\.wav|\.m4a)/.test(name)) return 'wrong1';
-      if (/_w[_\-]?2([._\-]|\d|\s|$|\.mp3|\.wav|\.m4a)/.test(name)) return 'wrong2';
-      if (/_w[_\-]?3([._\-]|\d|\s|$|\.mp3|\.wav|\.m4a)/.test(name)) return 'wrong3';
-      // 规则2: 通用中文命名
-      if (/正反馈|答对[^的]|正确答案/.test(filename) && !/错误|不对|再想想/.test(filename)) return 'right';
+      // 规则1b: 负反馈 — w_X_Y（X=步, Y=出现次数=负反馈序号）
+      //   标准写法: w_1_2(步1第2次) / w_2_3(步2第3次)；另兼容「步_w_次」(如 1_w_3) 与旧式 _w_N
+      //   ★ 关键修复：以 w 之后的「最后一段数字」(出现次数 Y) 作为负反馈序号，
+      //     避免同一步的多条反馈 w_1_1/w_1_2/w_1_3 全撞 wrong1（旧逻辑只读第 1 个数字=步）。
+      //   仅支持 1~3（前端只有 3 个负反馈槽位），超出返回 null 由用户手动处理。
+      const wm = name.match(/(?:^|[^\d])w[_\-](\d+)(?:[_\-](\d+))?/);
+      if (wm) {
+        const wOcc = parseInt(wm[2] || wm[1], 10);
+        if (wOcc >= 1 && wOcc <= 3) return 'wrong' + wOcc;
+      }
+      // 规则1c: 中文负反馈 — 负反馈N (N=1~3)
+      const negM = filename.match(/负反馈\s*([123])/);
+      if (negM) return 'wrong' + negM[1];
+      // 规则2: 通用中文命名（正反馈/答对 类）
+      // ★ 负反馈排除：含 错误/不对/再想想/负反馈 的一律不判为答对，避免误归
+      const isWrongText = /错误|不对|再想想|负反馈/.test(filename);
+      if (!isWrongText) {
+        if (/正反馈|正确答案|答对|对了|鼓励|赞[美]?|很?棒|真棒|厉害|非常好|做得好|优秀|正确(?!答案)/.test(filename)) return 'right';
+      }
+      // 规则3: 通用英文命名（正反馈/答对 类；排除 incorrect 等含 correct 的否定词）
+      if (!isWrongText && /(^|[^a-z])(right|correct|praise|cheer|great|perfect|awesome|bravo|excellent|well[\s_-]?done|good[\s_-]?job)([^a-z]|$)/.test(name)) return 'right';
+      // 规则4: 第N次错误/反馈 → 负反馈N
       if (/第\s*1[\s、\-]*次?[\s、]*(错误|反馈)/.test(filename)) return 'wrong1';
       if (/第\s*2[\s、\-]*次?[\s、]*(错误|反馈)/.test(filename)) return 'wrong2';
       if (/第\s*3[\s、\-]*次?[\s、]*(错误|反馈)/.test(filename)) return 'wrong3';
+      // 题干音频（朗读/配音）：独立于反馈音频，放在最末（反馈规则已提前 return）。
+      //   ★ 规范后缀 tg（如 26sp_G2W13-P1-1_tg.mp3）→ 与 _s/关键词 同为 stem 角色（零破坏兼容）
+      if (/[_-]tg([._\-]|\d|\s|$|\.mp3|\.wav|\.m4a)/i.test(name)) return 'stem';
+      //   _s 后缀（如 xxx_s.mp3 / 轻互动1-2_s.mp3）— 历史约定，保留
+      if (/_s([._\-]|\d|\s|$|\.mp3|\.wav|\.m4a)/i.test(name)) return 'stem';
+      //   关键词：题干 / 配音 / 朗读 / narration / 题目音 / _stem / 单词边界stem（避免 system.mp3 误判）
+      if (/题干|配音|朗读|narration|题目音|_stem\b|\bstem\b|stem[\s_-]?audio/i.test(filename)) return 'stem';
       return null; // 未识别
     }
 
@@ -903,7 +1051,7 @@
       }
 
       // 分类
-      const classified = { right: [], wrong1: [], wrong2: [], wrong3: [], unknown: [] };
+      const classified = { right: [], wrong1: [], wrong2: [], wrong3: [], stem: [], unknown: [] };
       audioFiles.forEach(f => {
         const role = classifyVoiceFile(f.name);
         if (role) classified[role].push(f);
@@ -916,6 +1064,7 @@
         wrong1: classified.wrong1[0] ? {name: classified.wrong1[0].name, file: classified.wrong1[0]} : null,
         wrong2: classified.wrong2[0] ? {name: classified.wrong2[0].name, file: classified.wrong2[0]} : null,
         wrong3: classified.wrong3[0] ? {name: classified.wrong3[0].name, file: classified.wrong3[0]} : null,
+        stem: classified.stem[0] ? {name: classified.stem[0].name, file: classified.stem[0]} : null,
       };
       // 保存所有文件用于批量上传
       voiceAllDroppedFiles = audioFiles;
@@ -930,6 +1079,7 @@
           wrong1: voiceLocalFiles.wrong1 ? voiceLocalFiles.wrong1.name : null,
           wrong2: voiceLocalFiles.wrong2 ? voiceLocalFiles.wrong2.name : null,
           wrong3: voiceLocalFiles.wrong3 ? voiceLocalFiles.wrong3.name : null,
+          stem: voiceLocalFiles.stem ? voiceLocalFiles.stem.name : null,
         }));
       } catch(e) {}
 
@@ -949,9 +1099,9 @@
 
       preview.style.display = 'block';
 
-      // 4 个角色格子
+      // 5 个角色格子（含题干音频）
       let html = '';
-      ['right', 'wrong1', 'wrong2', 'wrong3'].forEach(role => {
+      ['right', 'wrong1', 'wrong2', 'wrong3', 'stem'].forEach(role => {
         const files = classified[role];
         const has = files.length > 0;
         html += `<div style="padding:8px;border-radius:6px;border:1px solid ${has ? '#22c55e' : '#ef444444'};background:${has ? 'rgba(34,197,94,0.06)' : 'rgba(239,68,68,0.04)'};">
@@ -1008,6 +1158,20 @@
      * @param {Array|undefined} audioListOverride 可选：独立的音频素材列表（来自语音专属文件夹读回）。
      *        不传则使用 mortonMaterials 中筛出的音频（图片读回附带的情况）。
      */
+    // 自动提示音频命名（小灯泡）：<题名>_tips(提示1) / <题名>_tips2 或 <题名>_tips_2(提示2) / <题名>_tips3 或 _tips_3(提示3)
+    //   → 逐题 autoHints 槽位音频。题名取 tips 之前的部分；tips 后数字(可选，可带下划线)即提示序号。
+    // 例：轻互动2-1_tips.mp3(提示1) / 轻互动2-1_tips2.mp3(提示2) / 26sp_G2W13-P1-1_tips_1.mp3(提示1)
+    function parseAutoHintAudioName(name) {
+      const base = String(name).replace(/\.[^.]+$/, '');
+      const cm = base.match(/^(.*?)[_\-]tips[_-]?(\d*)$/i);
+      if (cm) {
+        const qName = cm[1].trim();
+        const n = cm[2] ? parseInt(cm[2], 10) : 1;
+        return { qName, hintIndex: n - 1 };
+      }
+      return null;
+    }
+
     function autoMatchVoiceToCdn(audioListOverride) {
       const audioList = audioListOverride || (mortonMaterials || []).filter(isAudioMaterial);
       if (audioList.length === 0) return;
@@ -1021,12 +1185,27 @@
         return n;
       }
 
-      const roles = ['right', 'wrong1', 'wrong2', 'wrong3'];
-      const byRole = { right: [], wrong1: [], wrong2: [], wrong3: [] };
+      const roles = ['right', 'wrong1', 'wrong2', 'wrong3', 'stem'];
+      const byRole = { right: [], wrong1: [], wrong2: [], wrong3: [], stem: [] };
+
+      // ★ 自动提示音频预匹配：_<功能>_tips(N) → 逐题 autoHints[idx].audioUrl
+      //   先剥离这些文件，避免污染全局 5 角色（right/wrong1~3/stem）统计
+      audioList.forEach(m => {
+        const ap = parseAutoHintAudioName(m.name);
+        if (!ap) return;
+        const q = findQuestionByName(ap.qName);
+        if (q) {
+          fillAutoHintAudioTo(q, ap.hintIndex, m.url);
+          console.log(`[VOICE_MATCH] 自动提示音频命中: "${m.name}" → ${ap.qName} 提示#${ap.hintIndex + 1}`);
+        } else {
+          console.log(`[VOICE_MATCH] 自动提示音频未找到对应题: "${m.name}" (题名="${ap.qName}")`);
+        }
+      });
+      const nonHintAudio = audioList.filter(m => !parseAutoHintAudioName(m.name));
 
       // 策略A：对 CDN 文件名直接分类（带调试日志）
       console.log('[VOICE_MATCH] CDN 音频文件列表:');
-      audioList.forEach(m => {
+      nonHintAudio.forEach(m => {
         const role = classifyVoiceFile(m.name);
         console.log(`  [VOICE_MATCH] "${m.name}" → ${role || '❌ 未识别'}`);
         if (role && byRole[role]) byRole[role].push(m);
@@ -1039,7 +1218,7 @@
         const localName = localEntry ? localEntry.name : null;
         if (!localName) return;
         const lb = localName.replace(/\.[^.]+$/, '').toLowerCase();
-        const found = audioList.find(m => {
+        const found = nonHintAudio.find(m => {
           const cb = (m.name || '').replace(/\.[^.]+$/, '').toLowerCase();
           return m.name === localName || lb === cb ||
                  (m.name || '').toLowerCase().includes(lb) || cb.includes(lb);
@@ -1077,7 +1256,7 @@
       const details = document.getElementById('voice-cdn-details');
       el.style.display = 'block';
 
-      const roles = ['right', 'wrong1', 'wrong2', 'wrong3'];
+      const roles = ['right', 'wrong1', 'wrong2', 'wrong3', 'stem'];
       if (matched === total) {
         el.querySelector('div').textContent = '✅ 全部语音已匹配 CDN 地址（可直接生成）';
         el.style.borderColor = '#22c55e';
@@ -1094,8 +1273,13 @@
         const url = voiceCdnUrls[role];
         const localEntry = voiceLocalFiles[role];
         const local = localEntry ? localEntry.name : null;
+        // 本地未拖文件但有 CDN URL 时，从 URL 提取文件名显示（避免显示 ?）
+        const cdnName = url
+          ? decodeURIComponent(url.split('?')[0].split('/').pop() || '')
+          : '';
+        const display = local || cdnName || '?';
         if (url) {
-          return `<div style="color:#16a34a;">● ${VOICE_ROLE_LABELS[role]}: <span title="${url}">${local || '?'}</span> ✓</div>`;
+          return `<div style="color:#16a34a;">● ${VOICE_ROLE_LABELS[role]}: <span title="${url}">${display}</span> ✓</div>`;
         } else if (local) {
           return `<div style="color:#f59e0b;">● ${VOICE_ROLE_LABELS[role]}: <span>${local}</span> — CDN 中未找到</div>`;
         }
@@ -1111,9 +1295,9 @@
     function clearVoiceState() {
       if (!confirm('确定要清除所有语音识别结果和 CDN 匹配吗？\n\n清除后需重新拖入语音文件并读回 CDN。')) return;
       // 重置状态
-      voiceLocalFiles = { right: null, wrong1: null, wrong2: null, wrong3: null };
+      voiceLocalFiles = { right: null, wrong1: null, wrong2: null, wrong3: null, stem: null };
       voiceAllDroppedFiles = [];
-      voiceCdnUrls = { right: null, wrong1: null, wrong2: null, wrong3: null };
+      voiceCdnUrls = { right: null, wrong1: null, wrong2: null, wrong3: null, stem: null };
       // 清除 localStorage
       try {
         localStorage.removeItem('qf_voice_local');
@@ -1128,7 +1312,7 @@
       document.getElementById('voice-readback-status').textContent = '';
       document.getElementById('voice-clear-btn').style.display = 'none';
       // 清除手动下拉框
-      ['voice-right', 'voice-wrong1', 'voice-wrong2', 'voice-wrong3'].forEach(id => {
+      ['voice-right', 'voice-wrong1', 'voice-wrong2', 'voice-wrong3', 'voice-stem'].forEach(id => {
         const sel = document.getElementById(id);
         if (sel) sel.innerHTML = '<option value="">— 未选择 —</option>';
       });
@@ -1140,15 +1324,15 @@
     function updateVoiceStatusBadge() {
       const badge = document.getElementById('voice-status-badge');
       if (!badge) return;
-      const roles = ['right', 'wrong1', 'wrong2', 'wrong3'];
+      const roles = ['right', 'wrong1', 'wrong2', 'wrong3', 'stem'];
       const cdnMatched = roles.filter(r => voiceCdnUrls[r]).length;
       const localMatched = roles.filter(r => voiceLocalFiles[r]).length;
 
       if (cdnMatched === roles.length) {
-        badge.innerHTML = '<span style="color:#16a34a;">🎤 语音已就绪 (4/4)</span>';
+        badge.innerHTML = `<span style="color:#16a34a;">🎤 语音已就绪 (${cdnMatched}/${roles.length})</span>`;
         badge.style.display = '';
       } else if (cdnMatched > 0) {
-        badge.innerHTML = `<span style="color:#f59e0b;">🎤 语音部分就绪 (${cdnMatched}/4) — 生成将缺失部分语音</span>`;
+        badge.innerHTML = `<span style="color:#f59e0b;">🎤 语音部分就绪 (${cdnMatched}/${roles.length}) — 生成将缺失部分语音</span>`;
         badge.style.display = '';
       } else if (localMatched > 0) {
         badge.innerHTML = '<span style="color:#ef4444;">🎤 语音文件已识别但 CDN 未匹配 — 需读回 URL</span>';
@@ -1279,7 +1463,22 @@
       autoMatchVoiceToCdn();
 
       // 兜底：填充下拉框（仅在需要手动选择时可见）
-      const slotIds = ['voice-right', 'voice-wrong1', 'voice-wrong2', 'voice-wrong3'];
+      const slotIds = ['voice-right', 'voice-wrong1', 'voice-wrong2', 'voice-wrong3', 'voice-stem'];
+      // 若下拉框还没渲染（details 默认隐藏但元素存在），直接填充
+      slotIds.forEach(id => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        sel.innerHTML = '<option value="">— 未选择 —</option>' +
+          audioList.map(m => `<option value="${escapeHtml(m.url)}">${escapeHtml(m.name)}</option>`).join('');
+      });
+      const fallback = document.getElementById('voice-manual-fallback');
+      if (fallback) fallback.style.display = '';
+    }
+
+    /** 把 CDN 音频列表填入 5 个兜底下拉框，并展开面板，便于手动补选未匹配的角色 */
+    function populateVoiceManualOptions(audioList) {
+      const slotIds = ['voice-right', 'voice-wrong1', 'voice-wrong2', 'voice-wrong3', 'voice-stem'];
+      // 若下拉框还没渲染（details 默认隐藏但元素存在），直接填充
       slotIds.forEach(id => {
         const sel = document.getElementById(id);
         if (!sel) return;
@@ -1289,18 +1488,6 @@
           sel.innerHTML = '<option value="">— 未选择 —</option>' +
             audioList.map(m => `<option value="${escapeHtml(m.url)}">${escapeHtml(m.name)}</option>`).join('');
         }
-      });
-    }
-
-    /** 把 CDN 音频列表填入 4 个兜底下拉框，并展开面板，便于手动补选未匹配的角色 */
-    function populateVoiceManualOptions(audioList) {
-      const slotIds = ['voice-right', 'voice-wrong1', 'voice-wrong2', 'voice-wrong3'];
-      // 若下拉框还没渲染（details 默认隐藏但元素存在），直接填充
-      slotIds.forEach(id => {
-        const sel = document.getElementById(id);
-        if (!sel) return;
-        sel.innerHTML = '<option value="">— 未选择 —</option>' +
-          audioList.map(m => `<option value="${escapeHtml(m.url)}">${escapeHtml(m.name)}</option>`).join('');
       });
       const fallback = document.getElementById('voice-manual-fallback');
       if (fallback) fallback.style.display = '';
@@ -1319,6 +1506,7 @@
               wrong1: parsed.wrong1 ? {name: parsed.wrong1, file: null} : null,
               wrong2: parsed.wrong2 ? {name: parsed.wrong2, file: null} : null,
               wrong3: parsed.wrong3 ? {name: parsed.wrong3, file: null} : null,
+              stem: parsed.stem ? {name: parsed.stem, file: null} : null,
             };
           }
         }
@@ -1326,22 +1514,23 @@
         if (savedCdn) voiceCdnUrls = JSON.parse(savedCdn);
         // 如果有保存的状态且有 CDN 数据，恢复显示
         if (voiceLocalFiles.right || voiceLocalFiles.wrong1 ||
-            voiceLocalFiles.wrong2 || voiceLocalFiles.wrong3) {
+            voiceLocalFiles.wrong2 || voiceLocalFiles.wrong3 || voiceLocalFiles.stem) {
           // 重新渲染预览（用保存的数据构造 classified 结构）
           const classified = {
             right: voiceLocalFiles.right ? [{name: voiceLocalFiles.right.name}] : [],
             wrong1: voiceLocalFiles.wrong1 ? [{name: voiceLocalFiles.wrong1.name}] : [],
             wrong2: voiceLocalFiles.wrong2 ? [{name: voiceLocalFiles.wrong2.name}] : [],
             wrong3: voiceLocalFiles.wrong3 ? [{name: voiceLocalFiles.wrong3.name}] : [],
+            stem: voiceLocalFiles.stem ? [{name: voiceLocalFiles.stem.name}] : [],
             unknown: []
           };
           renderVoicePreview(classified);
         }
         if (voiceCdnUrls.right || voiceCdnUrls.wrong1 ||
-            voiceCdnUrls.wrong2 || voiceCdnUrls.wrong3) {
-          const matched = [voiceCdnUrls.right, voiceCdnUrls.wrong1,
-                          voiceCdnUrls.wrong2, voiceCdnUrls.wrong3].filter(Boolean).length;
-          renderCdnMatchStatus(matched, 4);
+            voiceCdnUrls.wrong2 || voiceCdnUrls.wrong3 || voiceCdnUrls.stem) {
+          const allRoles = ['right', 'wrong1', 'wrong2', 'wrong3', 'stem'];
+          const matched = allRoles.filter(r => voiceCdnUrls[r]).length;
+          renderCdnMatchStatus(matched, allRoles.length);
         }
       } catch(e) {}
       // 确保状态徽章在页面加载时正确显示
@@ -1483,13 +1672,13 @@
         const matched = [voiceCdnUrls.right, voiceCdnUrls.wrong1,
                          voiceCdnUrls.wrong2, voiceCdnUrls.wrong3].filter(Boolean).length;
         // 未匹配满 4 个时，把 CDN 音频填入兜底下拉框，方便手动补选
-        if (matched < 4) populateVoiceManualOptions(audioList);
+        if (matched < 5) populateVoiceManualOptions(audioList);
         if (matched === 4) {
           status.style.color = '#16a34a';
-          status.textContent = `✅ 读回 ${audioList.length} 个音频，4/4 角色全部匹配，可直接生成`;
+          status.textContent = `✅ 读回 ${audioList.length} 个音频，${matched}/${matched} 角色全部匹配，可直接生成`;
         } else {
           status.style.color = '#f59e0b';
-          status.textContent = `✅ 读回 ${audioList.length} 个音频 | 自动匹配 ${matched}/4，未匹配的请在下方「手动选择」里指派`;
+          status.textContent = `✅ 读回 ${audioList.length} 个音频 | 自动匹配 ${matched}/5，未匹配的请在下方「手动选择」里指派`;
         }
       } catch (e) {
         status.style.color = '#ef4444';
@@ -1504,32 +1693,21 @@
 
     // 解析素材文件名 → {qNum, role, optIndex}
     // ════════════════════════════════════════════════════════════════════
-    //  文件名 → 题面解析（支持两套命名约定，返回 {qNum|qName, role, optIndex}）
-    //  约定A(旧/数字): Q03-bg(背景图) / Q03 或 Q03-stem(题目图) / Q03-A..H(选项图)
-    //  约定B(新/组课文档原名，推荐): 轻互动2-1 / 关卡题1-1 / 轻互动2-3 ...
-    //    → 文件名形如  轻互动2-1-bg.png / 轻互动2-1-A.png / 轻互动3-1.png
-    //    → 直接按「题目原名」匹配 q.name，彻底免去把 轻互动2-1 翻译成 Q0X 的人工步骤
+    //  文件名 → 题面解析（唯一命名约定：组课文档原名 + 标准功能后缀）
+    //  格式: <题名>_<功能>.<ext>
+    //    例: 轻互动2-1_bg.jpg  (背景图) / 轻互动2-1_a.png (选项A图) / 轻互动2-1_stem.png (题目图)
+    //  <题名>  必须 == Excel「名称」列（如 轻互动2-1），按 q.name 精确匹配，跨组唯一
+    //  <功能>  固定短码: bg(背景图) / a~h(选项图) / stem(题目图·题干)
     //  注意: 不存在"答案图"——答案是图片时它就是某个选项图，靠 answer 字段标记正确选项。
     // ════════════════════════════════════════════════════════════════════
     function parseMortonName(name) {
       const base = String(name).replace(/\.[^.]+$/, '');
-      // 约定A: Q03 / Q03-bg / Q03-A
-      const qm = base.match(/Q(\d+)(?:[_\-](bg|stem|q|opt|option|[A-H](?![A-Za-z])))?/i);
-      if (qm) {
-        const qNum = parseInt(qm[1], 10);
-        let role = qm[2] ? qm[2].toLowerCase() : 'stem';
-        let optIndex = null;
-        if (/^[a-h]$/.test(role)) { optIndex = role.toUpperCase().charCodeAt(0) - 65; role = 'opt'; }
-        else if (role === 'option') { role = 'opt'; }
-        else if (role === 'q') { role = 'stem'; }
-        return { qNum, qName: null, role, optIndex };
-      }
-      // 约定B: 组课文档原名 → 轻互动2-1 / 关卡题1-1 (-角色后缀)
+      // 组课文档原名 + 标准功能后缀  →  轻互动2-1 / 关卡题1-1 (-功能后缀)
       const cm = base.match(/^(.*?)(\d+)[_\-](\d+)(?:[_\-](.+))?$/);
       if (cm) {
         const qName = (cm[1] + cm[2] + '-' + cm[3]).trim();   // 如 "轻互动2-1"
         const rest = (cm[4] || '').toLowerCase();
-        let role = 'stem', optIndex = null;
+        let role = 'stem', optIndex = null, hintIndex = null;
         if (rest === 'bg' || rest === '背景' || rest === 'background') { role = 'bg'; }
         else if (/^[a-h]$/.test(rest)) { optIndex = rest.toUpperCase().charCodeAt(0) - 65; role = 'opt'; }
         else if (rest.startsWith('opt') || rest.startsWith('option')) {
@@ -1537,8 +1715,14 @@
           const mm = rest.match(/[a-h]/);
           if (mm) optIndex = mm[0].toUpperCase().charCodeAt(0) - 65;
         }
-        // 其余(无后缀 / 题 / 题干 / stem) → 题目图
-        return { qNum: null, qName, role, optIndex };
+        // ★ 自动提示图（小灯泡）：_<功能> = bulb / 小灯泡(提示1) · bulb2 / 小灯泡2(提示2) · bulb3 / 小灯泡3(提示3)
+        //   → 逐题 autoHints 槽位（hintIndex 0 起）。同时兼容英文 bulb 与中文 小灯泡 两种命名。
+        else if (rest === 'bulb' || rest === '小灯泡' || /^bulb(\d+)$/.test(rest) || /^小灯泡(\d+)$/.test(rest)) {
+          const n = (rest === 'bulb' || rest === '小灯泡') ? 1 : parseInt(rest.replace(/^(bulb|小灯泡)/, ''), 10);
+          role = 'ahint'; hintIndex = n - 1;
+        }
+        // 其余(无后缀 / stem / 题 / 题干) → 题目图
+        return { qName, role, optIndex, hintIndex };
       }
       return null;
     }
@@ -1549,10 +1733,21 @@
       if (role === 'bg') {
         if (!q.backgroundUrl) { q.backgroundUrl = url; return true; }
       } else if (role === 'opt') {
+        // 选择题：选项图 → optionImages
         if (!q.optionImages) q.optionImages = [];
         if (!q.optionImages.some(o => o.index === optIndex)) {
           q.optionImages.push({ index: optIndex, url });
           return true;
+        }
+        // ★ 填空选择题（COMPLETION 且含选项型空）：选项图 → 该选项型空的 optionImages
+        if (Array.isArray(q.blanks) && q.blanks.length) {
+          const blank = q.blanks.find(b => (b.blankType === 'OPTION' || b.answerType === 'OPTION')) || q.blanks[0];
+          if (!blank.optionImages) blank.optionImages = [];
+          if (!blank.optionImages.some(o => o.index === optIndex)) {
+            blank.optionImages.push({ index: optIndex, url });
+            console.log(`    → 填空选择题选项图绑定到空「${blank.varName || blank.name || '空1'}」 optIndex=${optIndex}`);
+            return true;
+          }
         }
       } else {  // stem → 题目图
         if (!q.questionImages) q.questionImages = [];
@@ -1561,6 +1756,31 @@
           return true;
         }
       }
+      return false;
+    }
+
+    // 确保逐题 autoHints 数组稠密：补齐 0..idx 的空槽（避免稀疏数组导致 payload 构建崩溃）
+    function ensureAutoHintSlot(q, idx) {
+      if (!q) return;
+      if (!q.autoHints) q.autoHints = [];
+      for (let i = 0; i <= idx; i++) {
+        if (!q.autoHints[i]) q.autoHints[i] = { imageUrl: '', audioUrl: '', variables: [] };
+      }
+    }
+
+    // 把自动提示图片填入逐题 autoHints[idx].imageUrl（读回命中）
+    function fillAutoHintImageTo(q, hintIndex, url) {
+      if (!q || hintIndex == null) return false;
+      ensureAutoHintSlot(q, hintIndex);
+      if (!q.autoHints[hintIndex].imageUrl) { q.autoHints[hintIndex].imageUrl = url; return true; }
+      return false;
+    }
+
+    // 把自动提示音频填入逐题 autoHints[idx].audioUrl（读回命中）
+    function fillAutoHintAudioTo(q, hintIndex, url) {
+      if (!q || hintIndex == null) return false;
+      ensureAutoHintSlot(q, hintIndex);
+      if (!q.autoHints[hintIndex].audioUrl) { q.autoHints[hintIndex].audioUrl = url; return true; }
       return false;
     }
 
@@ -1627,11 +1847,20 @@
       const hit = list.find(m => (m.name || '').replace(/\.[^.]+$/, '') === base);
       return hit ? hit.url : null;
     }
+    // 题干音频解析：已是 URL 直接用；文件名则按 CDN 音频库同名匹配；匹配不到则原样保留（交由后端/人工）
+    function resolveStemAudio(name) {
+      if (!name) return '';
+      if (/^https?:\/\//i.test(name)) return name;
+      return resolveAudioUrlByName(name) || name;
+    }
 
-    // 按 q.name 跨文件组找题目
+    // 按 q.name 或 q.code（公司标准编码，如 26sp_G2W13-P1-1）跨文件组找题目
+    // 两者互为别名：文档「名称」(友好名) 与素材文件按公司编码命名时都能匹配上
     function findQuestionByName(name) {
+      if (!name) return null;
       for (const g of (fileGroups || [])) {
-        const q = (g.questions || []).find(x => (x.name || '') === name);
+        const q = (g.questions || []).find(x =>
+          (x.name || '') === name || (x.code || '') === name);
         if (q) return q;
       }
       return null;
@@ -1691,7 +1920,7 @@
       reader.readAsText(inp.files[0]);
     }
 
-    // 路径A：按文件名自动匹配（优先在激活文件组内匹配，避免跨组串题）
+    // 按文件名自动匹配（唯一命名约定：组课文档原名 + 标准功能后缀，按 q.name 跨组精确匹配）
     // 返回 {matched, unmatched}
     function autoMatchMorton() {
       // ★ 优化口径：manifest 策略下直接按素材清单绑定，跳过文件名解析
@@ -1711,13 +1940,15 @@
         const p = parseMortonName(m.name);
         if (!p) { console.log(`  [${mi}] ${m.name} → 文件名不匹配`); unmatched.push(m); return; }
 
-        // ★ 约定B: 按「题目原名」(轻互动2-1) 直接匹配，跨组唯一、零编号翻译误差
+        // 按「题目原名」(轻互动2-1) 直接匹配，跨组唯一、零编号翻译误差（唯一命名约定）
         if (p.qName) {
           const q = findQuestionByName(p.qName);
           console.log(`  [${mi}] "${m.name}" → 名称匹配 qName="${p.qName}" role=${p.role} optIndex=${p.optIndex} 命中=${q ? '是' : '否'}`);
           if (q) {
-            const result = fillQuestionTo(q, p.role, m.url, p.optIndex);
-            console.log(`    → fillQuestionTo=${result}`);
+            let result;
+            if (p.role === 'ahint') result = fillAutoHintImageTo(q, p.hintIndex, m.url);
+            else result = fillQuestionTo(q, p.role, m.url, p.optIndex);
+            console.log(`    → ${p.role === 'ahint' ? 'fillAutoHintImageTo' : 'fillQuestionTo'}=${result}`);
             if (result) matched.push(m); else unmatched.push(m);
           } else {
             console.log(`    → ❌ 找不到名为 "${p.qName}" 的题目`);
@@ -1726,38 +1957,8 @@
           return;
         }
 
-        // ★ 约定A: 数字编号 Q03（保持兼容），优先激活组避免跨组串题
-        const qi = p.qNum - 1;
-        console.log(`  [${mi}] "${m.name}" → qNum=${p.qNum} qi=${qi} role=${p.role} optIndex=${p.optIndex}`);
-
-        // ★ 先尝试激活文件组（避免跨组串题）
-        let placed = false;
-        if (activeGroup) {
-          const qs = activeGroup.questions || [];
-          if (qi >= 0 && qi < qs.length) {
-            const result = fillQuestionTo(qs[qi], p.role, m.url, p.optIndex);
-            console.log(`    → 激活组"${activeGroup.filename}" qs[${qi}] fillQuestionTo=${result}`);
-            if (result) { matched.push(m); placed = true; }
-          } else {
-            console.log(`    → 激活组跳过(qi=${qi}, 题数=${qs.length})`);
-          }
-        }
-
-        // 激活组未命中 → 再搜索其他组（向后兼容单组场景）
-        if (!placed) {
-          for (let gi = 0; gi < fileGroups.length; gi++) {
-            if (gi === activeFileIndex) continue;
-            const group = fileGroups[gi];
-            const qs = group.questions || [];
-            if (qi >= 0 && qi < qs.length) {
-              const result = fillQuestionTo(qs[qi], p.role, m.url, p.optIndex);
-              console.log(`    → ⚠️ 跨组匹配: 组"${group.filename}" qs[${qi}] fillQuestionTo=${result}`);
-              if (result) { matched.push(m); placed = true; break; }
-            }
-          }
-        }
-
-        if (!placed) { console.log(`  [${mi}] "${m.name}" → ❌ 未放置（所有组均无 Q${p.qNum}）`); unmatched.push(m); }
+        // （数字编号 Q03 约定已移除：唯一命名约定为「组课文档原名 + 标准功能后缀」，
+        //   所有素材均经上方 qName 分支按题名精确匹配，无编号翻译、无跨组串题风险）
       });
       console.log('[autoMatchMorton] 结果:', matched.length, 'matched,', unmatched.length, 'unmatched');
       return { matched, unmatched };
@@ -2006,14 +2207,22 @@
         const hasText = q.wrongFeedback || q.correctFeedback;
         const hasImg = q.wrongFeedbackImg || q.correctFeedbackImg;
         const hasAudio = q.wrongFeedbackAudio || q.correctFeedbackAudio;
+        const hasStem = q.stemAudio;
         const hasCond = q.conditionFeedbacks && q.conditionFeedbacks.length > 0;
         let fbStatus = '<span style="color:#64748b">未配置</span>';
         let parts = [];
         if (hasText) parts.push('文本');
         if (hasImg) parts.push('图片');
         if (hasAudio) parts.push('音频');
+        if (hasStem) parts.push('朗读');
         if (hasCond) parts.push('条件');
         if (parts.length > 0) fbStatus = `<span style="color:#86efac">${parts.join('+')}</span>`;
+
+        // 自动提示状态（逐题优先，空则回落全局默认）
+        const hasAH = q.autoHints && q.autoHints.length > 0;
+        const ahBadge = hasAH
+          ? `<span style="color:#22c55e;cursor:pointer" title="点击「✨自动提示」查看/编辑本题自动提示">✨ ${q.autoHints.length}</span>`
+          : `<span style="color:#475569" title="未单独配置，将使用全局默认（AI辅助提示面板）">默认</span>`;
 
         // 生成结果列
         const r = results[i];
@@ -2048,10 +2257,13 @@
           <td style="font-size:11px">${q.difficulty || '未设置'}</td>
           <td style="font-size:11px">${(q.questionImages && q.questionImages.length) ? `<span style="color:#f59e0b" title="${escapeHtml(q.questionImages.map(img => img.url).join('\n'))}">📷 ${q.questionImages.length}张</span>` : '<span style="color:#475569">—</span>'}${(q.optionImages && q.optionImages.length) ? ` <span style="color:#38bdf8" title="${escapeHtml(q.optionImages.map(o => (o.index!=null?'选项'+(String.fromCharCode(65+o.index))+': ':'')+o.url).join('\n'))}">🔘 ${q.optionImages.length}选项图</span>` : ''}</td>
           <td style="font-size:11px">${q.backgroundUrl ? `<span style="color:#22c55e" title="${escapeHtml(q.backgroundUrl)}">🖼 已设置</span>` : '<span style="color:#475569">—</span>'}</td>
+          <td style="font-size:11px;text-align:center">${ahBadge}</td>
           <td>${fbStatus}</td>
           <td>${genResult}</td>
           <td style="white-space:nowrap">
             ${previewBtn}
+            <button class="btn" style="padding:4px 10px;font-size:12px;background:#f59e0b;color:#fff;border:none;border-radius:4px;cursor:pointer;margin-right:4px"
+                 onclick="openAutoHintModal(${i})">✨自动提示</button>
             <button class="btn" style="padding:4px 10px;font-size:12px;background:#6366f1;color:#fff;border:none;border-radius:4px;cursor:pointer"
                  onclick="openFbModal(${i})">编辑反馈</button>
           </td>
@@ -2086,6 +2298,7 @@
       document.getElementById('fb-right-img').value = q.correctFeedbackImg || '';
       document.getElementById('fb-wrong-audio').value = q.wrongFeedbackAudio || '';
       document.getElementById('fb-right-audio').value = q.correctFeedbackAudio || '';
+      document.getElementById('fb-stem-audio').value = q.stemAudio || '';
       renderCondFeedbacks(q.conditionFeedbacks || []);
       document.getElementById('fb-modal').classList.remove('hidden');
     }
@@ -2101,6 +2314,7 @@
       q.correctFeedbackImg = document.getElementById('fb-right-img').value.trim();
       q.wrongFeedbackAudio = document.getElementById('fb-wrong-audio').value.trim();
       q.correctFeedbackAudio = document.getElementById('fb-right-audio').value.trim();
+      q.stemAudio = document.getElementById('fb-stem-audio').value.trim();
       q.conditionFeedbacks = collectCondFeedbacks();
       closeFbModal();
       renderPreview();
@@ -2150,6 +2364,326 @@
       return list;
     }
 
+    // ════════════════════════════════════════
+    //  AI辅助提示 → 自动提示（全题型通用）
+    // ════════════════════════════════════════
+
+    /** 全局自动提示列表（每项 = 一个自动提示，含媒体 + 多个变量） */
+    let autoHints = [];
+
+    /** 操作状态选项（莫顿变量触发条件） */
+    const VAR_OPERATIONS = [
+      { value: 'NO_ACTION', label: '无操作' },
+      { value: 'NOT_SUBMITTED', label: '未提交' },
+      { value: 'NOT_PASSED', label: '未通关' },
+    ];
+
+    /**
+     * 添加一条自动提示
+     * @param {Object} existing - 已有数据（编辑回填用），可选
+     */
+    function addAutoHint(existing) {
+      const uid = Date.now() + Math.random().toString(36).slice(2, 8);
+      const hint = {
+        uid,
+        imageUrl: (existing && existing.imageUrl) || '',
+        audioUrl: (existing && existing.audioUrl) || '',
+        variables: (existing && existing.variables) || [],
+      };
+      autoHints.push(hint);
+      renderAutoHintItem(hint);
+      saveAutoHintsToState();
+    }
+
+    /** 删除一条自动提示 */
+    function removeAutoHint(uid) {
+      autoHints = autoHints.filter(h => h.uid !== uid);
+      const el = document.getElementById('auto-hint-' + uid);
+      if (el) el.remove();
+      saveAutoHintsToState();
+    }
+
+    /** 渲染单条自动提示 DOM */
+    function renderAutoHintItem(hint) {
+      const container = document.getElementById('auto-hint-list');
+      const div = document.createElement('div');
+      div.className = 'auto-hint-item';
+      div.id = 'auto-hint-' + hint.uid;
+      const idx = autoHints.indexOf(hint) + 1;
+
+      // 变量列表 HTML
+      const varsHtml = hint.variables.map((v, vi) => renderVarRow(hint.uid, v, vi)).join('');
+
+      div.innerHTML = `
+        <div class="auto-hint-header">
+          <span class="auto-hint-title">🤖 自动提示 #${idx}</span>
+          <button class="auto-hint-remove" onclick="removeAutoHint('${hint.uid}')" title="删除此自动提示">×</button>
+        </div>
+        <div class="auto-hint-row cols-2">
+          <div><label>图片URL</label><input placeholder="//cdn.xxx.com/hint.png" value="${escapeHtml(hint.imageUrl)}"
+            class="ah-img" oninput="onAutoHintChange('${hint.uid}')"></div>
+          <div><label>音频URL</label><input placeholder="//cdn.xxx.com/hint.mp3" value="${escapeHtml(hint.audioUrl)}"
+            class="ah-audio" oninput="onAutoHintChange('${hint.uid}')"></div>
+        </div>
+        <div style="margin-top:8px">
+          <div style="font-size:13px;font-weight:600;color:var(--orange);margin-bottom:6px">📊 触发变量
+            <span style="font-weight:400;color:var(--text-muted);font-size:12px;margin-left:4px">（满足所有变量条件时展示此提示）</span></div>
+          <div id="vars-${hint.uid}">${varsHtml}</div>
+          <button class="add-var-btn" onclick="addVariable('${hint.uid}')">+ 添加变量</button>
+        </div>`;
+      container.appendChild(div);
+    }
+
+    /** 渲染单行变量 */
+    function renderVarRow(hintUid, v, vi) {
+      const varUid = v.uid || (Date.now() + Math.random().toString(36).slice(2, 8));
+      if (!v.uid) v.uid = varUid;
+      const opsOptions = VAR_OPERATIONS.map(o =>
+        `<option value="${o.value}" ${o.value === (v.operation || '') ? 'selected' : ''}>${o.label}</option>`
+      ).join('');
+      return `
+        <div class="var-item" id="var-${hintUid}-${varUid}">
+          <div class="var-item-header">
+            <span class="var-item-title">变量 #${vi + 1}</span>
+            <button class="var-remove-btn" onclick="removeVariable('${hintUid}','${varUid}')" title="删除此变量">×</button>
+          </div>
+          <div class="var-fields">
+            <div>
+              <label>操作状态</label>
+              <select class="var-operation" onchange="onVarChange('${hintUid}','${varUid}')">
+                <option value="">— 请选择 —</option>${opsOptions}
+              </select>
+            </div>
+            <div>
+              <label>时间（秒）</label>
+              <input type="number" min="0" step="1" placeholder="如：30" value="${v.timeSeconds !== undefined ? v.timeSeconds : ''}"
+                class="var-time" oninput="onVarChange('${hintUid}','${varUid}')">
+            </div>
+          </div>
+        </div>`;
+    }
+
+    /** 向某条自动提示添加变量 */
+    function addVariable(hintUid) {
+      const hint = autoHints.find(h => h.uid === hintUid);
+      if (!hint) return;
+      const newVar = { uid: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), operation: '', timeSeconds: 0 };
+      hint.variables.push(newVar);
+      const varsContainer = document.getElementById('vars-' + hintUid);
+      if (varsContainer) {
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = renderVarRow(hintUid, newVar, hint.variables.length - 1);
+        varsContainer.appendChild(tempDiv.firstElementChild);
+      }
+      saveAutoHintsToState();
+    }
+
+    /** 删除某个变量 */
+    function removeVariable(hintUid, varUid) {
+      const hint = autoHints.find(h => h.uid === hintUid);
+      if (!hint) return;
+      hint.variables = hint.variables.filter(v => v.uid !== varUid);
+      const el = document.getElementById('var-' + hintUid + '-' + varUid);
+      if (el) el.remove();
+      // 重新编号标题
+      reindexVariables(hintUid);
+      saveAutoHintsToState();
+    }
+
+    /** 重新编号变量标题 */
+    function reindexVariables(hintUid) {
+      const hint = autoHints.find(h => h.uid === hintUid);
+      if (!hint) return;
+      const container = document.getElementById('vars-' + hintUid);
+      if (!container) return;
+      container.querySelectorAll('.var-item').forEach((el, idx) => {
+        const titleEl = el.querySelector('.var-item-title');
+        if (titleEl) titleEl.textContent = '变量 #' + (idx + 1);
+      });
+    }
+
+    /** 自动提示媒体字段变更 */
+    function onAutoHintChange(hintUid) {
+      const hint = autoHints.find(h => h.uid === hintUid);
+      if (!hint) return;
+      const el = document.getElementById('auto-hint-' + hintUid);
+      if (!el) return;
+      hint.imageUrl = (el.querySelector('.ah-img') || {}).value || '';
+      hint.audioUrl = (el.querySelector('.ah-audio') || {}).value || '';
+      saveAutoHintsToState();
+    }
+
+    /** 变量字段变更 */
+    function onVarChange(hintUid, varUid) {
+      const hint = autoHints.find(h => h.uid === hintUid);
+      if (!hint) return;
+      const v = hint.variables.find(v => v.uid === varUid);
+      if (!v) return;
+      const vel = document.getElementById('var-' + hintUid + '-' + varUid);
+      if (!vel) return;
+      v.operation = (vel.querySelector('.var-operation') || {}).value || '';
+      const timeInput = vel.querySelector('.var-time');
+      v.timeSeconds = timeInput ? (parseFloat(timeInput.value) || 0) : 0;
+      saveAutoHintsToState();
+    }
+
+    /** 保存自动提示到全局状态（供批量生成时收集） */
+    function saveAutoHintsToState() {
+      // 数据已在 autoHints 数组中实时更新
+      // 此函数保留作为扩展点（如持久化到 localStorage）
+    }
+
+    /**
+     * 从 DOM 收集所有自动提示数据（提交时调用）
+     * @returns {Array} 自动提示列表
+     */
+    function collectAutoHints() {
+      return autoHints.map(h => ({
+        imageUrl: h.imageUrl || '',
+        audioUrl: h.audioUrl || '',
+        variables: (h.variables || []).map(v => ({
+          operation: v.operation || '',
+          timeSeconds: parseFloat(v.timeSeconds) || 0,
+        })).filter(v => v.operation && v.timeSeconds > 0),
+      })).filter(h => h.variables.length > 0 || h.imageUrl || h.audioUrl);
+    }
+
+    /**
+     * 用数据回填自动提示面板（编辑题目时调用）
+     * @param {Array} hints - 自动提示数据列表
+     */
+    function renderAutoHints(hints) {
+      autoHints = [];
+      document.getElementById('auto-hint-list').innerHTML = '';
+      if (hints && hints.length) {
+        hints.forEach(h => addAutoHint(h));
+      }
+    }
+
+    /**
+     * 清空自动提示面板
+     */
+    function clearAutoHints() {
+      autoHints = [];
+      document.getElementById('auto-hint-list').innerHTML = '';
+    }
+
+    // ========== 逐题自动提示（Excel 导入 / 本题专属，覆盖全局默认）============
+    // 与全局「AI辅助提示」面板相互独立：本题 autoHints 优先，缺失则回落全局默认。
+    let _ahIdx = -1;
+    let _ahWorking = [];
+    let _uidc = 0;
+    function _genUid() { _uidc++; return Date.now().toString(36) + '_' + _uidc.toString(36) + Math.random().toString(36).slice(2, 5); }
+
+    /** 打开本题自动提示编辑弹窗（回填已有逐题 autoHints，缺失 uid 自动补） */
+    function openAutoHintModal(i) {
+      const q = getCurrentQuestions()[i];
+      if (!q) return;
+      _ahIdx = i;
+      _ahWorking = JSON.parse(JSON.stringify(q.autoHints || []));
+      _ahWorking.forEach(h => {
+        if (!h.uid) h.uid = _genUid();
+        (h.variables || []).forEach(v => { if (!v.uid) v.uid = _genUid(); });
+      });
+      document.getElementById('autohint-modal-title').textContent = `✨ 第 ${i + 1} 题自动提示 — ${q.stem.slice(0, 15)}`;
+      renderPerQAutoHints();
+      document.getElementById('autohint-modal').classList.remove('hidden');
+    }
+
+    function closeAutoHintModal() {
+      document.getElementById('autohint-modal').classList.add('hidden');
+      _ahIdx = -1; _ahWorking = [];
+    }
+
+    /** 保存：写回本题 autoHints 并刷新表格徽标 */
+    function saveAutoHintModal() {
+      if (_ahIdx < 0) return;
+      const q = getCurrentQuestions()[_ahIdx];
+      if (q) {
+        q.autoHints = JSON.parse(JSON.stringify(_ahWorking));
+      }
+      closeAutoHintModal();
+      renderPreview();
+    }
+
+    /** 渲染本题自动提示列表 */
+    function renderPerQAutoHints() {
+      const c = document.getElementById('per-q-ah-list');
+      if (!c) return;
+      if (!_ahWorking.length) {
+        c.innerHTML = `<div style="font-size:13px;color:var(--text-muted);padding:8px 0">本题未单独配置自动提示，将使用全局默认（右侧「AI辅助提示」面板）。</div>`;
+        return;
+      }
+      c.innerHTML = _ahWorking.map((h, hi) => {
+        const vars = (h.variables || []).map((v, vi) => {
+          const ops = VAR_OPERATIONS.map(o => `<option value="${o.value}" ${o.value === (v.operation || '') ? 'selected' : ''}>${o.label}</option>`).join('');
+          return `<div class="var-item">
+            <div class="var-item-header">
+              <span class="var-item-title">变量 #${vi + 1}</span>
+              <button class="var-remove-btn" onclick="removePerQVar(${hi},'${v.uid || ''}')" title="删除此变量">×</button>
+            </div>
+            <div class="var-fields">
+              <div><label>操作状态</label>
+                <select onchange="onPerQVarOp(${hi},'${v.uid || ''}',this.value)">
+                  <option value="">— 请选择 —</option>${ops}
+                </select>
+              </div>
+              <div><label>时间（秒）</label>
+                <input type="number" min="0" step="1" value="${v.timeSeconds !== undefined ? v.timeSeconds : ''}" oninput="onPerQVarTime(${hi},'${v.uid || ''}',this.value)">
+              </div>
+            </div>
+          </div>`;
+        }).join('');
+        return `<div class="auto-hint-item">
+          <div class="auto-hint-header">
+            <span class="auto-hint-title">🤖 自动提示 #${hi + 1}</span>
+            <button class="auto-hint-remove" onclick="removePerQAutoHint(${hi})" title="删除此自动提示">×</button>
+          </div>
+          <div class="auto-hint-row cols-2">
+            <div><label>图片URL</label><input placeholder="//cdn.xxx.com/hint.png" value="${escapeHtml(h.imageUrl || '')}" oninput="onPerQImage(${hi},this.value)"></div>
+            <div><label>音频URL</label><input placeholder="//cdn.xxx.com/hint.mp3" value="${escapeHtml(h.audioUrl || '')}" oninput="onPerQAudio(${hi},this.value)"></div>
+          </div>
+          <div style="margin-top:8px">
+            <div style="font-size:13px;font-weight:600;color:var(--orange);margin-bottom:6px">📊 触发变量</div>
+            ${vars}
+            <button class="add-var-btn" onclick="addPerQVar(${hi})">+ 添加变量</button>
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    function addPerQAutoHint() {
+      _ahWorking.push({ uid: _genUid(), imageUrl: '', audioUrl: '', variables: [] });
+      renderPerQAutoHints();
+    }
+    function removePerQAutoHint(hi) {
+      _ahWorking.splice(hi, 1);
+      renderPerQAutoHints();
+    }
+    function addPerQVar(hi) {
+      const h = _ahWorking[hi];
+      if (!h) return;
+      if (!h.variables) h.variables = [];
+      h.variables.push({ uid: _genUid(), operation: '', timeSeconds: 0 });
+      renderPerQAutoHints();
+    }
+    function removePerQVar(hi, uid) {
+      const h = _ahWorking[hi];
+      if (!h) return;
+      h.variables = (h.variables || []).filter(v => (v.uid || '') !== uid);
+      renderPerQAutoHints();
+    }
+    function onPerQImage(hi, val) { if (_ahWorking[hi]) _ahWorking[hi].imageUrl = val; }
+    function onPerQAudio(hi, val) { if (_ahWorking[hi]) _ahWorking[hi].audioUrl = val; }
+    function onPerQVarOp(hi, uid, val) {
+      const h = _ahWorking[hi]; if (!h) return;
+      const v = (h.variables || []).find(x => (x.uid || '') === uid); if (v) v.operation = val;
+    }
+    function onPerQVarTime(hi, uid, val) {
+      const h = _ahWorking[hi]; if (!h) return;
+      const v = (h.variables || []).find(x => (x.uid || '') === uid); if (v) v.timeSeconds = parseFloat(val) || 0;
+    }
+
     // ========== 批量生成（SSE 流式） ==========
     async function batchGenerate() {
       if (!authToken || !authCookie) {
@@ -2188,7 +2722,7 @@
       }
 
       // ★ 语音状态前置检查：如果已识别本地文件但 CDN 未全匹配，提醒用户
-      const roles = ['right', 'wrong1', 'wrong2', 'wrong3'];
+      const roles = ['right', 'wrong1', 'wrong2', 'wrong3', 'stem'];
       const hasLocalVoice = roles.some(r => voiceLocalFiles[r]);
       const cdnMatched = roles.filter(r => voiceCdnUrls[r]).length;
       const localMatched = roles.filter(r => voiceLocalFiles[r]).length;
@@ -2248,7 +2782,8 @@
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            questions: questions,
+            // ★ 逐题解析题干音频：文件名→CDN URL（已是URL则原样），与反馈音频独立
+            questions: questions.map(q => ({ ...q, stemAudio: resolveStemAudio(q.stemAudio) })),
             cookie: authCookie,
             token: authToken,
             ...defaults,
@@ -2967,6 +3502,10 @@
         },
         // ★ 通用语音反馈（一套复用于全部题目）
         defaultVoiceFeedback: getVoiceFeedbackConfig(),
+        // ★ 题干音频（全局默认，复用于全部题目；逐题 stemAudio 优先）
+        defaultStemAudio: voiceCdnUrls.stem || '',
+        // ★ AI辅助提示 → 自动提示（全局默认，复用于全部题目；不写死题型）
+        defaultAutoHints: collectAutoHints(),
       };
     }
 
@@ -2975,8 +3514,8 @@
       const cdn = voiceCdnUrls || {};
       const vf = {};
       let any = false;
-      const slotIds = ['voice-right', 'voice-wrong1', 'voice-wrong2', 'voice-wrong3'];
-      const keys = ['right', 'wrong1', 'wrong2', 'wrong3'];
+      const slotIds = ['voice-right', 'voice-wrong1', 'voice-wrong2', 'voice-wrong3', 'voice-stem'];
+      const keys = ['right', 'wrong1', 'wrong2', 'wrong3', 'stem'];
       // 1) 优先用自动匹配的 CDN URL
       keys.forEach(k => { if (cdn[k]) { vf[k] = cdn[k]; any = true; } });
       // 2) 自动未覆盖的角色，从手动下拉框补
@@ -3009,6 +3548,7 @@
         correctFeedbackImg: q.correctFeedbackImg || '',
         wrongFeedbackAudio: q.wrongFeedbackAudio || '',
         correctFeedbackAudio: q.correctFeedbackAudio || '',
+        stemAudio: q.stemAudio || '',
         questionImages: q.questionImages || [],
         backgroundUrl: q.backgroundUrl || '',
         conditionFeedbacks: q.conditionFeedbacks || [],

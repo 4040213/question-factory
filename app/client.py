@@ -5,7 +5,7 @@ from typing import Any, Optional
 
 import httpx
 
-API_HOST = "https://tms-mx.xueqiulearning.com"
+from app.config import get_morton_api  # 莫顿 API 域名（支持运行时切换测试/正式环境）
 DEFAULT_TIMEOUT = 30.0
 MAX_RETRIES = 2   # 最多重试次数
 RETRY_DELAY = 1.0  # 重试间隔（秒）
@@ -25,7 +25,7 @@ class MortonClient:
         self.cookie = cookie
         self.token = token
         self._client = httpx.AsyncClient(
-            base_url=API_HOST,
+            base_url=get_morton_api(),
             timeout=DEFAULT_TIMEOUT,
             headers={
                 "Cookie": cookie,

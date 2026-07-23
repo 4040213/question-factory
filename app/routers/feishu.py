@@ -79,6 +79,35 @@ _register_aliases("pass_condition", "跳关条件", "跳关")
 _register_aliases("scene", "场景设置", "场景")
 # 以下列存在但当前忽略
 _register_aliases("_ignore", "小灯泡", "语音引导", "空")
+# ★ 题干音频（朗读/配音）：独立于反馈音频，由 _write_*_excel 写入「题干音频」列
+_register_aliases("stem_audio", "题干音频", "配音", "朗读音频", "题干配音", "narration", "朗读")
+# ★ 标准编码（公司素材编码，如 26sp_G2W13-P1-1）：与「名称」(友好名) 互为别名，
+#   用于匹配按公司编码命名的图片/音频文件（如 26sp_G2W13-P1-1_tips_1.mp3）。
+#   文档里若已有该列，解析时自动带入；生成的 Excel 也会预留此列供填写。
+_register_aliases("code", "标准编码", "素材编码", "题号编码", "编码", "公司编码")
+# ★ 自动提示（小灯泡）：最多 3 个提示，每个 图片 + 音频 + 最多6个变量（每变量『状态:时间』）
+#   与 question.py 解析 / 前端 collectAutoHints 共用同一命名约定，不写死。
+#   第 1 个提示额外兼容旧单提示文档的无序号别名（自动提示图片 / 自动提示音频 / 自动提示变量N），
+#   保证旧需求文档仍能把数据落到第 1 个提示。
+_AUTO_HINT_COUNT = 3
+_AUTO_HINT_VAR_COUNT = 6
+_AUTO_HINT_CN = ["一", "二", "三", "四", "五", "六"]
+for _h in range(1, _AUTO_HINT_COUNT + 1):
+    _hcn = _AUTO_HINT_CN[_h - 1]
+    _img_aliases = [f"自动提示{_h}图片", f"自动提示第{_hcn}图片", f"自动提示{_h}图"]
+    _aud_aliases = [f"自动提示{_h}音频", f"自动提示第{_hcn}音频", f"自动提示{_h}音"]
+    if _h == 1:  # 旧单提示文档兼容
+        _img_aliases += ["自动提示图片", "自动提示图", "自动提示背景图", "自动提示图片url"]
+        _aud_aliases += ["自动提示音频", "自动提示音", "自动提示音频url"]
+    _register_aliases(f"auto_hint_{_h}_image", *_img_aliases)
+    _register_aliases(f"auto_hint_{_h}_audio", *_aud_aliases)
+    for _i in range(1, _AUTO_HINT_VAR_COUNT + 1):
+        _icn = _AUTO_HINT_CN[_i - 1]
+        _register_aliases(
+            f"auto_hint_{_h}_var{_i}",
+            f"自动提示{_h}变量{_i}", f"自动提示{_h}变量{_icn}",
+            f"自动提示第{_hcn}个提示变量{_i}", f"自动提示第{_hcn}提示第{_icn}变量",
+        )
 
 
 class FeishuConvertRequest(BaseModel):
@@ -541,10 +570,13 @@ def _process_pass_condition(row: Dict):
 # ============================================================
 
 def _clean_feedback(raw: str) -> str:
-    """清洗负反馈文本：去除「负反馈一：」等标签。"""
+    """清洗负反馈文本：去除「负反馈一：」「负反馈3：」等标签（中文/阿拉伯数字均支持）。"""
     if not raw or raw == "无":
         return raw
-    cleaned = re.sub(r'负反馈[一二三四五六七八九十]+[：:]\s*', '', raw)
+    # 阿拉伯数字：负反馈3： / 负反馈3:
+    cleaned = re.sub(r'负反馈\s*\d+\s*[：:]\s*', '', raw)
+    # 中文数字：负反馈一： / 负反馈二：
+    cleaned = re.sub(r'负反馈[一二三四五六七八九十]+\s*[：:]\s*', '', cleaned)
     cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
     return cleaned.strip()
 
@@ -553,6 +585,62 @@ def _clean_positive_feedback(raw: str) -> str:
     if not raw or raw == "无":
         return raw
     return raw.strip()
+
+
+# 中文数字 → 阿拉伯数字（用于「负反馈三」这类写法）
+_CN_DIGIT = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5,
+             "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+
+
+def _build_feedback_columns(neg_raw: str, pos_raw: str,
+                            fallback_min: int = 1, fallback_max: int = 3) -> Dict[str, Any]:
+    """从飞书负/正反馈文本，构建 Excel 反馈相关列的值。
+
+    ★ 核心修复（消除「通用反馈 vs 条件反馈」重复弹窗）：
+      莫顿反馈模型里，`wrongQuestionFeedback`(通用) 与 `questionFeedbacks`(条件)
+      是两套独立触发逻辑。组课文档的「负反馈N：文字」语义是【第 N 次错才触发】，
+      它本质是一条**条件反馈**，不应再被当作通用反馈写一遍。
+
+      规则：
+      - neg_raw 含「负反馈N：」层级 → 只产出【条件反馈】：
+          条件反馈文本 = 清洗后文字；最少/最多错次 = N（N-N 单点触发）。
+          不再产出 答错通用反馈（否则会与条件反馈内容重复，学生答错连弹两个一样窗口）。
+      - neg_raw 是纯文字(无层级) → 产出【通用负反馈】：只写 答错通用反馈。
+      - pos_raw = 『无』 → 答对通用反馈留空（不生成正反馈）。
+
+    选择题(_write_choice_excel) 与 填空题(_write_fill_excel) 共用此函数，
+    保证两种题型反馈行为完全一致。
+    """
+    neg = (neg_raw or "").strip()
+    pos = (pos_raw or "").strip()
+
+    general_wrong = ""
+    cond_text = ""
+    cond_min = fallback_min
+    cond_max = fallback_max
+
+    if neg and neg != "无":
+        m = re.search(r'负反馈\s*(\d+|[一二三四五六七八九十]+)\s*[：:]', neg)
+        if m:
+            token = m.group(1)
+            n = int(token) if token.isdigit() else _CN_DIGIT.get(token, 0)
+            if n:
+                cond_min = n
+                cond_max = n
+            # 条件反馈文本 = 清洗掉「负反馈N：」前缀后的纯文字
+            cond_text = _clean_feedback(neg)
+        else:
+            # 无层级的纯文字 → 通用负反馈
+            general_wrong = neg
+
+    pos_fb = pos if (pos and pos != "无") else ""
+    return {
+        "general_wrong": general_wrong,
+        "cond_text": cond_text,
+        "cond_min": cond_min,
+        "cond_max": cond_max,
+        "pos_fb": pos_fb,
+    }
 
 
 # ============================================================
@@ -607,6 +695,21 @@ def _download_images(questions: List[Dict], client: httpx.Client, token: str, do
 #  Excel 写入
 # ============================================================
 
+def _ensure_header_col(ws, name: str, after_col: int = 0) -> int:
+    """确保工作表表头含指定列；不存在则在末尾追加，返回 1-based 列号。幂等。
+
+    after_col: 若需追加，至少放到 after_col 之后（避免落在已知反馈列区 <=31 内，
+    与 _write_choice_excel 的硬编码反馈列 27/28/29 冲突）。默认 0 表示直接追加到末列。
+    """
+    header = [str(c or "").strip() for c in next(ws.iter_rows(min_row=1, max_row=1, values_only=True), [])]
+    if name in header:
+        return header.index(name) + 1
+    col = max(ws.max_column, after_col) + 1
+    ws.cell(row=1, column=col, value=name)
+    print(f"[EXCEL] 表头缺失列「{name}」，已在第 {col} 列追加(after_col={after_col})")
+    return col
+
+
 def _write_choice_excel(questions: List[Dict]) -> str:
     """将选择题写入 Excel 模板（31列）。
 
@@ -623,25 +726,41 @@ def _write_choice_excel(questions: List[Dict]) -> str:
     if ws.max_row > 1:
         ws.delete_rows(2, ws.max_row - 1)
     sr = 1  # 表头行
+    # after_col=31：确保缺失时追加到反馈列区(<=31)之后，避免与硬编码反馈列 27/28/29 冲突
+    _stem_audio_col = _ensure_header_col(ws, "题干音频", after_col=31)
+    # ★ 标准编码（公司素材编码）：与「名称」(location) 互为别名，供按公司编码命名的素材文件匹配
+    _code_col = _ensure_header_col(ws, "标准编码", after_col=_stem_audio_col)
+    # ★ 自动提示（小灯泡）：最多 3 个提示，每个 图片/音频 + 变量1~6（追加于末尾）
+    _auto_hint_img_cols: List[int] = []
+    _auto_hint_aud_cols: List[int] = []
+    _auto_hint_var_cols: List[List[int]] = []
+    _prev = _stem_audio_col
+    for _h in range(1, _AUTO_HINT_COUNT + 1):
+        _ic = _ensure_header_col(ws, f"自动提示{_h}图片", after_col=_prev)
+        _ac = _ensure_header_col(ws, f"自动提示{_h}音频", after_col=_ic)
+        _vc: List[int] = []
+        _p = _ac
+        for _i in range(1, _AUTO_HINT_VAR_COUNT + 1):
+            _c = _ensure_header_col(ws, f"自动提示{_h}变量{_i}", after_col=_p)
+            _vc.append(_c)
+            _p = _c
+        _auto_hint_img_cols.append(_ic)
+        _auto_hint_aud_cols.append(_ac)
+        _auto_hint_var_cols.append(_vc)
+        _prev = _p
 
     choice_qs = [q for q in questions if q["_type"] == "CHOICE"]
     for qi, q in enumerate(choice_qs):
         r = sr + qi + 1
 
-        # 反馈处理
+        # 题干音频（朗读/配音）：独立于反馈音频，写到「题干音频」列
+        stem_audio_val = q.get("stem_audio", "") or ""
+
+        # 反馈处理（选择题/填空题共用同一套逻辑，保证一致）
         neg_raw = q.get("feedback_negative", "") or q.get("feedback_combined", "")
         pos_raw = q.get("feedback_positive", "")
-
-        # 条件反馈文本
-        cond_text = _clean_feedback(neg_raw) if neg_raw and neg_raw != "无" else ""
-        pos_fb = pos_raw.strip() if pos_raw and pos_raw != "无" else ""
-
-        # 通用答错：取第一级反馈
-        general_wrong = ""
-        if neg_raw and neg_raw != "无":
-            parts = re.split(r'负反馈[一二三四五六七八九十]+[：:]', neg_raw)
-            if len(parts) > 1:
-                general_wrong = parts[1].strip()
+        fb = _build_feedback_columns(neg_raw, pos_raw,
+                                     q.get("_min_wrong", 1), q.get("_max_wrong", 3))
 
         # 分辨率
         scene = q.get("scene", "").strip()
@@ -658,18 +777,39 @@ def _write_choice_excel(questions: List[Dict]) -> str:
             14: resolution,
             18: q.get("knowledge", ""),
             19: "\n".join(q.get("_image_paths", [])),
-            21: general_wrong,
-            22: pos_fb,
-            27: q.get("_min_wrong", 1),
-            28: q.get("_max_wrong", 3),
-            29: cond_text,
+            21: fb["general_wrong"],
+            22: fb["pos_fb"],
+            27: fb["cond_min"],
+            28: fb["cond_max"],
+            29: fb["cond_text"],
         }
+        if stem_audio_val:
+            d[_stem_audio_col] = stem_audio_val
+        # ★ 标准编码：从文档「标准编码」列带入（别名已注册），供公司编码命名的素材匹配
+        _code_val = q.get("code", "") or ""
+        if _code_val:
+            d[_code_col] = _code_val
+
+        # ★ 自动提示（小灯泡）：逐提示写入图片/音频/变量1~6（逐题优先；文档未配则留空）
+        for _h in range(_AUTO_HINT_COUNT):
+            _auto_img = q.get(f"auto_hint_{_h + 1}_image", "") or ""
+            _auto_aud = q.get(f"auto_hint_{_h + 1}_audio", "") or ""
+            if _auto_img:
+                d[_auto_hint_img_cols[_h]] = _auto_img
+            if _auto_aud:
+                d[_auto_hint_aud_cols[_h]] = _auto_aud
+            for _i in range(1, _AUTO_HINT_VAR_COUNT + 1):
+                _v = q.get(f"auto_hint_{_h + 1}_var{_i}", "") or ""
+                if _v:
+                    d[_auto_hint_var_cols[_h][_i - 1]] = _v
 
         for oi, opt in enumerate(q.get("_options", [])):
             if opt:
                 d[3 + oi] = opt
 
-        for col in range(1, 32):
+        # ★ 写到 max_column+1（而非固定 32）：覆盖反馈列区之后追加的「题干音频」列(如第32列)，
+        #   否则题干音频值虽写入 d 字典却不会被 flush 到单元格（之前固定 range(1,32) 会漏写）。
+        for col in range(1, ws.max_column + 1):
             val = d.get(col, "")
             if val or col <= 29:
                 ws.cell(row=r, column=col).value = val if val else ""
@@ -702,6 +842,35 @@ def _write_fill_excel(questions: List[Dict]) -> str:
     if ws.max_row > 1:
         ws.delete_rows(2, ws.max_row - 1)
     sr = 1  # 表头行
+    # ★ 确保「题干音频」列存在（与选择题对齐；缺失则追加），供逐题朗读音频写入
+    _stem_audio_col = _ensure_header_col(ws, "题干音频", after_col=11)
+    # ★ 标准编码（公司素材编码）：与「名称」(location) 互为别名，供按公司编码命名的素材文件匹配
+    _code_col = _ensure_header_col(ws, "标准编码", after_col=_stem_audio_col)
+    # ★ 自动提示（小灯泡）：最多 3 个提示，每个 图片/音频 + 变量1~6（追加于末尾）
+    _auto_hint_img_cols: List[int] = []
+    _auto_hint_aud_cols: List[int] = []
+    _auto_hint_var_cols: List[List[int]] = []
+    _prev = 11
+    for _h in range(1, _AUTO_HINT_COUNT + 1):
+        _ic = _ensure_header_col(ws, f"自动提示{_h}图片", after_col=_prev)
+        _ac = _ensure_header_col(ws, f"自动提示{_h}音频", after_col=_ic)
+        _vc: List[int] = []
+        _p = _ac
+        for _i in range(1, _AUTO_HINT_VAR_COUNT + 1):
+            _c = _ensure_header_col(ws, f"自动提示{_h}变量{_i}", after_col=_p)
+            _vc.append(_c)
+            _p = _c
+        _auto_hint_img_cols.append(_ic)
+        _auto_hint_aud_cols.append(_ac)
+        _auto_hint_var_cols.append(_vc)
+        _prev = _p
+
+    # ★ 解析表头建立 列名→列号(1-based) 映射，稳健定位反馈/语音/图片新增列
+    #   （模板末尾已追加：题目图片/背景图/答错通用反馈/答对通用反馈/.../条件反馈音频，
+    #    与 parse_blank_excel 的 find_col 列名一致。旧模板无这些列时返回 -1，优雅跳过。）
+    _header = [str(c or "").strip() for c in next(ws.iter_rows(min_row=1, max_row=1, values_only=True), [])]
+    def _fill_col(name: str) -> int:
+        return _header.index(name) + 1 if name in _header else -1
 
     fill_qs = [q for q in questions if q["_type"] == "FILL"]
     for qi, q in enumerate(fill_qs):
@@ -796,6 +965,49 @@ def _write_fill_excel(questions: List[Dict]) -> str:
                 if opt_val:
                     d[base_col + 9 + oi] = opt_val
 
+        # ★ 反馈/语音/图片：与选择题 _write_choice_excel 共用 _build_feedback_columns，
+        #   保证两种题型反馈行为完全一致（飞书文档仅含文字反馈 + 嵌入图，
+        #   背景图/反馈图片/音频由前端从上传 CDN 文件自动匹配，此处不写）。
+        neg_raw = q.get("feedback_negative", "") or q.get("feedback_combined", "")
+        pos_raw = q.get("feedback_positive", "")
+        fb = _build_feedback_columns(neg_raw, pos_raw,
+                                     q.get("_min_wrong", 1), q.get("_max_wrong", 3))
+
+        _fb_cols = {
+            "题目图片": "\n".join(q.get("_image_paths", [])),
+            "答错通用反馈": fb["general_wrong"],
+            "答对通用反馈": fb["pos_fb"],
+            "最少错次": fb["cond_min"],
+            "最多错次": fb["cond_max"],
+            "条件反馈文本": fb["cond_text"],
+        }
+        for _name, _val in _fb_cols.items():
+            _c = _fill_col(_name)
+            if _c > 0 and _val != "":
+                d[_c] = _val
+
+        # ★ 题干音频（朗读/配音）：独立于反馈音频，写到「题干音频」列
+        _stem_val = q.get("stem_audio", "") or ""
+        if _stem_val:
+            d[_stem_audio_col] = _stem_val
+        # ★ 标准编码：从文档「标准编码」列带入（别名已注册），供公司编码命名的素材匹配
+        _code_val = q.get("code", "") or ""
+        if _code_val:
+            d[_code_col] = _code_val
+
+        # ★ 自动提示（小灯泡）：逐提示写入图片/音频/变量1~6（逐题优先；文档未配则留空）
+        for _h in range(_AUTO_HINT_COUNT):
+            _auto_img = q.get(f"auto_hint_{_h + 1}_image", "") or ""
+            _auto_aud = q.get(f"auto_hint_{_h + 1}_audio", "") or ""
+            if _auto_img:
+                d[_auto_hint_img_cols[_h]] = _auto_img
+            if _auto_aud:
+                d[_auto_hint_aud_cols[_h]] = _auto_aud
+            for _i in range(1, _AUTO_HINT_VAR_COUNT + 1):
+                _v = q.get(f"auto_hint_{_h + 1}_var{_i}", "") or ""
+                if _v:
+                    d[_auto_hint_var_cols[_h][_i - 1]] = _v
+
         for col, val in d.items():
             if val:
                 ws.cell(row=r, column=col).value = val
@@ -808,7 +1020,7 @@ def _write_fill_excel(questions: List[Dict]) -> str:
 #  莫顿素材库 URL 读回
 # ============================================================
 
-MORTON_API = "https://tms-mx.xueqiulearning.com"
+from app.config import get_morton_api  # 莫顿 API 域名（支持运行时切换测试/正式环境）
 # ★ 2026-07-16 修正：实际路径拼写是 merton（不是 morton），接口名是 searchMaterials（复数）
 MORTON_SEARCH_PATH = "/merton-backend/material/searchMaterials"
 
@@ -829,14 +1041,14 @@ def _morton_list_materials(cookie: str, token: str, folder_id: int) -> List[Dict
         "Authorization": token,
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "Referer": f"{MORTON_API}/fe_morton/morton/assetManager",
+        "Referer": f"{get_morton_api()}/fe_morton/morton/assetManager",
     }
     all_records: List[Dict] = []
     page = 1
     while True:
         try:
             resp = httpx.get(
-                f"{MORTON_API}{MORTON_SEARCH_PATH}",
+                f"{get_morton_api()}{MORTON_SEARCH_PATH}",
                 params={
                     "parentId": folder_id,
                     "pageNum": page,
@@ -855,7 +1067,7 @@ def _morton_list_materials(cookie: str, token: str, folder_id: int) -> List[Dict
             raw_text = resp.text[:500] if resp.text else "(空响应体)"
             raise Exception(
                 f"莫顿API返回 HTTP {resp.status_code}。"
-                f"\n  URL: {MORTON_API}{MORTON_SEARCH_PATH}?parentId={folder_id}&pageNum={page}"
+                f"\n  URL: {get_morton_api()}{MORTON_SEARCH_PATH}?parentId={folder_id}&pageNum={page}"
                 f"\n  响应前500字: {raw_text}"
             )
 
@@ -1053,12 +1265,12 @@ def _morton_upload_single(
     headers = {
         "Cookie": cookie,
         "Authorization": token,
-        "Referer": f"{MORTON_API}/fe_morton/morton/assetManager",
+        "Referer": f"{get_morton_api()}/fe_morton/morton/assetManager",
     }
 
     # 只试第一条候选路径（快速失败，不逐个耗尽所有候选）
     path = _MORTON_UPLOAD_PATHS[0]
-    url = f"{MORTON_API}{path}"
+    url = f"{get_morton_api()}{path}"
     try:
         files = {"file": (file_name, file_bytes, _guess_mime_type(file_name))}
         data = {"parentId": str(folder_id), "general": "0"}
