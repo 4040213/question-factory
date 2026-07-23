@@ -1854,13 +1854,13 @@
       return resolveAudioUrlByName(name) || name;
     }
 
-    // 按 q.name 或 q.code（公司标准编码，如 26sp_G2W13-P1-1）跨文件组找题目
-    // 两者互为别名：文档「名称」(友好名) 与素材文件按公司编码命名时都能匹配上
+    // 按 q.name 跨文件组找题目。题名即素材文件名前缀（公司编码，如 26sug2w1D1P1-1），
+    // 与按公司编码命名的图片/音频文件（如 26sug2w1D1P1-1_A）直接前缀匹配，无需额外编码列。
     function findQuestionByName(name) {
       if (!name) return null;
       for (const g of (fileGroups || [])) {
         const q = (g.questions || []).find(x =>
-          (x.name || '') === name || (x.code || '') === name);
+          (x.name || '') === name);
         if (q) return q;
       }
       return null;

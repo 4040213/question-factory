@@ -46,9 +46,6 @@ class QuestionItem(BaseModel):
     options: List[ChoiceOption]
     answer: str
     name: str = ""
-    # ★ 标准编码（公司素材编码，如 26sp_G2W13-P1-1）：与文档「名称」(友好名) 互为别名，
-    #    用于匹配按公司编码命名的图片/音频文件（如 26sp_G2W13-P1-1_tips_1.mp3）。
-    code: str = ""
     # 学科/分辨率/年级/阶段/难度/知识点
     subjectId: int = 0
     resolution: str = "1334*750"
@@ -452,8 +449,6 @@ class BlankQuestionItem(BaseModel):
     stem: str
     contexts: List[str] = []
     name: str = ""
-    # ★ 标准编码（公司素材编码）：与「名称」互为别名，用于匹配按公司编码命名的素材文件
-    code: str = ""
     subjectId: int = 0
     resolution: str = "1334*750"
     grade: int = 0
@@ -2174,7 +2169,6 @@ async def parse_blank_excel(file: UploadFile) -> Dict[str, Any]:
 
         idx_question_type = find_col("题型")
         idx_name = find_col("名称")
-        idx_code = find_col("标准编码", "素材编码", "题号编码", "编码")
         idx_subject = find_col("学科")
         idx_resolution = find_col("分辨率")
         idx_grade = find_col("年级")
@@ -2251,7 +2245,6 @@ async def parse_blank_excel(file: UploadFile) -> Dict[str, Any]:
             if qtype and qtype not in ("COMPLETION", "BLANK"):
                 continue
             name = str(get(row, idx_name, "")).strip()
-            code = str(get(row, idx_code, "")).strip()
             subject_raw = str(get(row, idx_subject, "")).strip()
             resolution = str(get(row, idx_resolution, "1334*750")).strip()
             grade_raw = str(get(row, idx_grade, "")).strip().replace("－", "-").replace("—", "-")
@@ -2388,7 +2381,6 @@ async def parse_blank_excel(file: UploadFile) -> Dict[str, Any]:
             questions.append({
                 "stem": stem_text,
                 "name": name,
-                "code": code,
                 "subjectId": subject_id,
                 "resolution": resolution,
                 "grade": grade_val,
@@ -2470,8 +2462,6 @@ async def parse_excel(file: UploadFile = File(...), question_type: str = "CHOICE
 
         idx_auto_img = [_find_auto_cols(*_auto_col_names(h, "图片")) for h in range(1, AUTO_HINT_COUNT + 1)]
         idx_auto_audio = [_find_auto_cols(*_auto_col_names(h, "音频")) for h in range(1, AUTO_HINT_COUNT + 1)]
-        # ★ 标准编码（公司素材编码）：与「名称」互为别名，用于匹配按公司编码命名的素材文件
-        idx_code = _find_auto_cols("标准编码", "素材编码", "题号编码", "编码")
         idx_auto_vars = [[_find_auto_cols(*_auto_col_names(h, f"变量{i}")) for i in range(1, AUTO_HINT_VAR_COUNT + 1)]
                          for h in range(1, AUTO_HINT_COUNT + 1)]
 
@@ -2526,8 +2516,6 @@ async def parse_excel(file: UploadFile = File(...), question_type: str = "CHOICE
                 option_e = ""; option_f = ""; option_g = ""; option_h = ""
                 answer = str(row[6] or "").strip().upper() if len(row) > 6 else ""
                 question_name = str(row[7] or "").strip() if len(row) > 7 else ""
-            code = str(row[idx_code]).strip() if (idx_code >= 0 and idx_code < len(row) and row[idx_code] is not None) else ""
-
             # 学科/分辨率/年级/阶段/难度/知识点/图片/背景/反馈/条件反馈 — 根据格式版本
             if is_new_format:
                 subject_raw = str(row[12] or "").strip() if len(row) > 12 else ""
@@ -2673,7 +2661,6 @@ async def parse_excel(file: UploadFile = File(...), question_type: str = "CHOICE
                 "options": options,
                 "answer": answer,
                 "name": question_name,
-                "code": code,
                 "subjectId": subject_id,
                 "resolution": resolution,
                 "grade": grade_val,

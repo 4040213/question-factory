@@ -81,10 +81,6 @@ _register_aliases("scene", "场景设置", "场景")
 _register_aliases("_ignore", "小灯泡", "语音引导", "空")
 # ★ 题干音频（朗读/配音）：独立于反馈音频，由 _write_*_excel 写入「题干音频」列
 _register_aliases("stem_audio", "题干音频", "配音", "朗读音频", "题干配音", "narration", "朗读")
-# ★ 标准编码（公司素材编码，如 26sp_G2W13-P1-1）：与「名称」(友好名) 互为别名，
-#   用于匹配按公司编码命名的图片/音频文件（如 26sp_G2W13-P1-1_tips_1.mp3）。
-#   文档里若已有该列，解析时自动带入；生成的 Excel 也会预留此列供填写。
-_register_aliases("code", "标准编码", "素材编码", "题号编码", "编码", "公司编码")
 # ★ 自动提示（小灯泡）：最多 3 个提示，每个 图片 + 音频 + 最多6个变量（每变量『状态:时间』）
 #   与 question.py 解析 / 前端 collectAutoHints 共用同一命名约定，不写死。
 #   第 1 个提示额外兼容旧单提示文档的无序号别名（自动提示图片 / 自动提示音频 / 自动提示变量N），
@@ -728,8 +724,6 @@ def _write_choice_excel(questions: List[Dict]) -> str:
     sr = 1  # 表头行
     # after_col=31：确保缺失时追加到反馈列区(<=31)之后，避免与硬编码反馈列 27/28/29 冲突
     _stem_audio_col = _ensure_header_col(ws, "题干音频", after_col=31)
-    # ★ 标准编码（公司素材编码）：与「名称」(location) 互为别名，供按公司编码命名的素材文件匹配
-    _code_col = _ensure_header_col(ws, "标准编码", after_col=_stem_audio_col)
     # ★ 自动提示（小灯泡）：最多 3 个提示，每个 图片/音频 + 变量1~6（追加于末尾）
     _auto_hint_img_cols: List[int] = []
     _auto_hint_aud_cols: List[int] = []
@@ -785,10 +779,6 @@ def _write_choice_excel(questions: List[Dict]) -> str:
         }
         if stem_audio_val:
             d[_stem_audio_col] = stem_audio_val
-        # ★ 标准编码：从文档「标准编码」列带入（别名已注册），供公司编码命名的素材匹配
-        _code_val = q.get("code", "") or ""
-        if _code_val:
-            d[_code_col] = _code_val
 
         # ★ 自动提示（小灯泡）：逐提示写入图片/音频/变量1~6（逐题优先；文档未配则留空）
         for _h in range(_AUTO_HINT_COUNT):
@@ -844,8 +834,6 @@ def _write_fill_excel(questions: List[Dict]) -> str:
     sr = 1  # 表头行
     # ★ 确保「题干音频」列存在（与选择题对齐；缺失则追加），供逐题朗读音频写入
     _stem_audio_col = _ensure_header_col(ws, "题干音频", after_col=11)
-    # ★ 标准编码（公司素材编码）：与「名称」(location) 互为别名，供按公司编码命名的素材文件匹配
-    _code_col = _ensure_header_col(ws, "标准编码", after_col=_stem_audio_col)
     # ★ 自动提示（小灯泡）：最多 3 个提示，每个 图片/音频 + 变量1~6（追加于末尾）
     _auto_hint_img_cols: List[int] = []
     _auto_hint_aud_cols: List[int] = []
@@ -990,10 +978,6 @@ def _write_fill_excel(questions: List[Dict]) -> str:
         _stem_val = q.get("stem_audio", "") or ""
         if _stem_val:
             d[_stem_audio_col] = _stem_val
-        # ★ 标准编码：从文档「标准编码」列带入（别名已注册），供公司编码命名的素材匹配
-        _code_val = q.get("code", "") or ""
-        if _code_val:
-            d[_code_col] = _code_val
 
         # ★ 自动提示（小灯泡）：逐提示写入图片/音频/变量1~6（逐题优先；文档未配则留空）
         for _h in range(_AUTO_HINT_COUNT):
