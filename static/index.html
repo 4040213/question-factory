@@ -252,6 +252,7 @@
                 <button type="button" onclick="importMaterialManifest()" style="font-size:12px;padding:5px 12px;border:1px solid #8b5cf6;border-radius:4px;background:#8b5cf6;color:#fff;cursor:pointer;">导入并绑定</button>
               </div>
             </div>
+
           </div>
 
           <!-- 语音反馈素材（拖入自动识别） v2 -->
@@ -1193,7 +1194,8 @@
       audioList.forEach(m => {
         const ap = parseAutoHintAudioName(m.name);
         if (!ap) return;
-        const q = findQuestionByName(ap.qName);
+        // 经 NAME_MAP 别名（友好名↔编码）匹配，使编码命名的提示音频在友好名 Excel 下也能命中
+        const q = findQuestionByNameWithAlias(ap.qName);
         if (q) {
           fillAutoHintAudioTo(q, ap.hintIndex, m.url);
           console.log(`[VOICE_MATCH] 自动提示音频命中: "${m.name}" → ${ap.qName} 提示#${ap.hintIndex + 1}`);
@@ -1702,10 +1704,20 @@
     // ════════════════════════════════════════════════════════════════════
     function parseMortonName(name) {
       const base = String(name).replace(/\.[^.]+$/, '');
-      // 组课文档原名 + 标准功能后缀  →  轻互动2-1 / 关卡题1-1 (-功能后缀)
-      const cm = base.match(/^(.*?)(\d+)[_\-](\d+)(?:[_\-](.+))?$/);
+      // 组课文档原名 + 标准功能后缀  →  轻互动2-1 / 关卡3(-option-A) / 关卡题1-1 (-功能后缀)
+      //   双模式匹配（先严格、后宽松，零回退）：
+      //     ① 双数字（原/优先）：前缀 + 数字1 + [-_] + 数字2 + [-_]功能  →  "轻互动2-1_bg" / "关卡2-2-option-B" / "26sp_G2W13-P1-1_tg"
+      //     ② 单数字（新增/兜底）：前缀 + 数字 + [-_]功能（无第二数字）→  "关卡3-option-A" / "轻互动1_bg"
+      let cm = base.match(/^(.*?)(\d+)[_\-](\d+)(?:[_\-](.+))?$/);   // 模式①
+      if (!cm) {
+        cm = base.match(/^(.*?)(\d+)[_\-](.+)$/);                         // 模式②（单数字兜底）
+        if (cm) {
+          // 把模式②的结果映射到统一结构：cm[3]=undefined(无第二数字), cm[4]=功能后缀
+          cm = [cm[0], cm[1], cm[2], undefined, cm[3]];
+        }
+      }
       if (cm) {
-        const qName = (cm[1] + cm[2] + '-' + cm[3]).trim();   // 如 "轻互动2-1"
+        const qName = cm[3] ? (cm[1] + cm[2] + '-' + cm[3]).trim() : (cm[1] + cm[2]).trim();
         const rest = (cm[4] || '').toLowerCase();
         let role = 'stem', optIndex = null, hintIndex = null;
         if (rest === 'bg' || rest === '背景' || rest === 'background') { role = 'bg'; }
@@ -1821,6 +1833,18 @@
     };
     window.questionAudioMap = {};  // 每题各自音频（per-question audio，未来用）
 
+    // 别名映射（之前积累的映射，非前端界面）：题名(友好名) ↔ 素材前缀(公司编码) 双向对照。
+    // 由 static/name-map.json 在页面初始化时自动加载（无前端界面，纯数据驱动）；
+    // 也可在控制台手动赋值 window.NAME_MAP = {...} 后重跑 autoMatchMorton()。
+    // 注意：此能力是「编码作为别名识别匹配」的核心，不应随前端映射界面移除而被删掉。
+    window.NAME_MAP = {};
+    (function loadAccumulatedNameMap() {
+      fetch('name-map.json')
+        .then(r => r.ok ? r.json() : null)
+        .then(obj => { if (obj) loadNameMapFromJson(obj); })
+        .catch(e => console.warn('[NAME_MAP] 自动加载失败（可忽略，可在控制台手动赋值）：', e));
+    })();
+
     // 由未来「组课文档→Excel」管线调用；现在也可手动「📋 导入素材清单(JSON)」。
     function loadMaterialManifest(input) {
       let data;
@@ -1865,6 +1889,32 @@
       }
       return null;
     }
+
+    // 把 {友好名:编码} 单向映射表展开为双向：{友好名:编码, 编码:友好名}，使任一方向都能命中。
+    function loadNameMapFromJson(obj) {
+      if (!obj || typeof obj !== 'object') return 0;
+      const merged = {};
+      Object.entries(obj).forEach(([k, v]) => {
+        if (k && v) { merged[k] = v; merged[v] = k; }
+      });
+      window.NAME_MAP = merged;
+      console.log('[NAME_MAP] 已加载', Object.keys(obj).length, '条（双向展开）');
+      return Object.keys(obj).length;
+    }
+
+    // 支持别名的题目查找：原题名(公司编码)找不到时，尝试 NAME_MAP 翻译后的别名(友好名)再找一次。
+    // 例：素材 26sug6w18d0p1-2-option-D → qName=26sug6w18d0p1-2 → NAME_MAP 翻成 轻互动1-1 → 命中友好名题。
+    function findQuestionByNameWithAlias(name) {
+      let q = findQuestionByName(name);
+      if (q) return q;
+      const alias = (window.NAME_MAP && window.NAME_MAP[name]) || null;
+      if (alias && alias !== name) {
+        const q2 = findQuestionByName(alias);
+        if (q2) { console.log(`    → 别名匹配：${name} ⇄ ${alias}`); return q2; }
+      }
+      return null;
+    }
+
 
     // manifest 图片绑定（替代文件名解析）。返回绑定成功项数。
     function applyManifestImageBindings() {
@@ -1940,9 +1990,10 @@
         const p = parseMortonName(m.name);
         if (!p) { console.log(`  [${mi}] ${m.name} → 文件名不匹配`); unmatched.push(m); return; }
 
-        // 按「题目原名」(轻互动2-1) 直接匹配，跨组唯一、零编号翻译误差（唯一命名约定）
+        // 按「题名」匹配：题名即素材文件名前缀。先按原名(公司编码)直接命中，
+        // 找不到时经 NAME_MAP 别名(友好名↔编码)再匹配一次（之前积累的映射能力）。
         if (p.qName) {
-          const q = findQuestionByName(p.qName);
+          const q = findQuestionByNameWithAlias(p.qName);
           console.log(`  [${mi}] "${m.name}" → 名称匹配 qName="${p.qName}" role=${p.role} optIndex=${p.optIndex} 命中=${q ? '是' : '否'}`);
           if (q) {
             let result;

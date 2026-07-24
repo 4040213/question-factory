@@ -13,6 +13,8 @@
 import re
 import os
 import json
+import csv
+import io
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -108,6 +110,12 @@ for _h in range(1, _AUTO_HINT_COUNT + 1):
 
 class FeishuConvertRequest(BaseModel):
     url: str
+
+
+class FigmaFeishuExtractRequest(BaseModel):
+    """Figma 插件专用：飞书链接转 CSV。"""
+    url: str
+    basePrefix: str = ""
 
 
 class MortonReadbackRequest(BaseModel):
@@ -559,6 +567,44 @@ def _process_pass_condition(row: Dict):
             else int(nums[0]) if len(nums) == 1
             else 3
         )
+
+
+def _questions_to_figma_csv(
+    questions: List[Dict[str, Any]],
+    base_prefix: str = "",
+) -> Tuple[str, int, List[Dict[str, Any]]]:
+    """将飞书选择题整理为 Figma 插件现有 CSV 格式。
+
+    输出列:
+      NamePrefix,A,B,C,D,E,F,G,H
+
+    NamePrefix 优先使用飞书「位置」列；如果为空，则用 basePrefix + 序号兜底。
+    """
+    choice_qs = [q for q in questions if q.get("_type") == "CHOICE"]
+    headers = ["NamePrefix"] + [chr(ord("A") + i) for i in range(8)]
+    out = io.StringIO()
+    writer = csv.writer(out, lineterminator="\n")
+    writer.writerow(headers)
+
+    items: List[Dict[str, Any]] = []
+    for idx, q in enumerate(choice_qs, start=1):
+        name_prefix = (q.get("location") or "").strip()
+        if not name_prefix:
+            name_prefix = f"{base_prefix}{idx}" if base_prefix else str(idx)
+
+        options = list(q.get("_options") or [])
+        writer.writerow([name_prefix] + [(options[i] if i < len(options) else "") for i in range(8)])
+
+        non_empty_options = [opt for opt in options if opt]
+        items.append({
+            "NamePrefix": name_prefix,
+            "optionCount": len(non_empty_options),
+            "stem": q.get("_stem", ""),
+            "answer": q.get("_answer", ""),
+            "warnings": q.get("_warnings", []),
+        })
+
+    return out.getvalue(), len(choice_qs), items
 
 
 # ============================================================
@@ -1165,6 +1211,48 @@ async def feishu_convert(body: FeishuConvertRequest) -> Dict[str, Any]:
                 "items": summary_items,
             },
             "files": files,
+        }
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/figma-extract")
+async def feishu_figma_extract(body: FigmaFeishuExtractRequest) -> Dict[str, Any]:
+    """Figma 插件专用：飞书文档链接 → 选项 CSV。
+
+    这个接口不生成 Excel，也不下载图片，只复用现有飞书表格解析能力，
+    返回插件可以直接写入 CSV 预览框的 csvText。
+    """
+    try:
+        client, token = _get_client()
+        try:
+            doc_id = _resolve_doc_id(client, token, body.url)
+            tables = _fetch_all_tables(client, token, doc_id)
+            questions = _assemble_questions(tables)
+        finally:
+            client.close()
+
+        if not questions:
+            return {"success": False, "error": "未解析到任何题目"}
+
+        csv_text, choice_count, items = _questions_to_figma_csv(
+            questions,
+            body.basePrefix.strip(),
+        )
+        if choice_count == 0:
+            return {"success": False, "error": "未解析到选择题选项，无法生成 Figma CSV"}
+
+        return {
+            "success": True,
+            "csvText": csv_text,
+            "summary": {
+                "total": len(questions),
+                "choice": choice_count,
+                "fill": sum(1 for q in questions if q.get("_type") == "FILL"),
+                "unsupported": sum(1 for q in questions if q.get("_type") == "UNSUPPORTED"),
+                "items": items,
+            },
         }
 
     except Exception as e:
